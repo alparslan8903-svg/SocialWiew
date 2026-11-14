@@ -3,6 +3,7 @@ package com.example.data.model
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
+import com.google.firebase.firestore.PropertyName
 import com.google.firebase.firestore.ServerTimestamp
 
 @IgnoreExtraProperties
@@ -13,11 +14,11 @@ data class UserPublic(
     val username: String = "",
     val bio: String = "",
     val avatarUrl: String = "",
-    val isVerified: Boolean = false,
+    @get:PropertyName("isVerified") val isVerified: Boolean = false,
     val followersCount: Long = 0L,
     val followingCount: Long = 0L,
     val videosCount: Long = 0L,
-    val isPublic: Boolean = true,
+    @get:PropertyName("isPublic") val isPublic: Boolean = true,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )

@@ -341,6 +341,48 @@ test("Cloud video media_chunks: creator can upload chunks atomically, others can
   await assertFails(
     bobDb.collection("videos").doc("vid_cloud").collection("media_chunks").doc("0").delete()
   );
+
+  // Legacy chunkCount=0 video backfill: owner can upload chunk and update chunkCount once, non-owner cannot
+  await assertSucceeds(
+    aliceDb.collection("videos").doc("vid_legacy").set({
+      userId: ALICE_UID,
+      authorName: "Alice",
+      authorUsername: "alice_vibes",
+      caption: "Legacy local clip",
+      videoUrl: "",
+      localFileName: "legacy.mp4",
+      chunkCount: 0,
+      durationMs: 3000,
+      tags: ["vlog"],
+      visibility: "public",
+      likesCount: 0,
+      commentsCount: 0,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+  await assertSucceeds(
+    aliceDb.collection("videos").doc("vid_legacy").collection("media_chunks").doc("chunk_0").set({
+      videoId: "vid_legacy",
+      userId: ALICE_UID,
+      chunkIndex: 0,
+      data: "AAAAIGZ0eXBpc29t",
+      visibility: "public",
+      createdAt: ts,
+    })
+  );
+  await assertSucceeds(
+    aliceDb.collection("videos").doc("vid_legacy").update({
+      chunkCount: 1,
+      updatedAt: pastTs(),
+    })
+  );
+  await assertFails(
+    bobDb.collection("videos").doc("vid_legacy").update({
+      chunkCount: 2,
+      updatedAt: pastTs(),
+    })
+  );
 });
 
 test("Admin verification: alparslan8903@gmail.com can claim verified badge while others cannot spoof it", async () => {

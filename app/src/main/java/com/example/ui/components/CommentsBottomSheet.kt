@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -358,17 +359,22 @@ private fun CommentItemRow(
             }
             if (comment.gifUrl.isNotBlank()) {
                 Spacer(modifier = Modifier.height(6.dp))
-                AsyncImage(
-                    model = comment.gifUrl,
-                    imageLoader = gifImageLoader,
-                    contentDescription = "Tenor GIF yorumu",
-                    contentScale = ContentScale.Crop,
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth(0.68f)
-                        .height(132.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                )
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    AsyncImage(
+                        model = comment.gifUrl,
+                        imageLoader = gifImageLoader,
+                        contentDescription = "Tenor GIF yorumu",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .widthIn(min = 96.dp, max = 230.dp)
+                            .heightIn(min = 72.dp, max = 230.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                    )
+                }
             }
         }
         if (isOwner) {
@@ -490,27 +496,35 @@ private fun TenorGifPickerPanel(
                             )
                         } else {
                             LazyVerticalGrid(
-                                columns = GridCells.Adaptive(minSize = 130.dp),
+                                columns = GridCells.Adaptive(minSize = 112.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 items(tenorState.gifs, key = { it.id }) { gif ->
-                                    AsyncImage(
-                                        model = gif.previewUrl,
-                                        imageLoader = gifImageLoader,
-                                        contentDescription = gif.title,
-                                        contentScale = ContentScale.Crop,
+                                    Box(
+                                        contentAlignment = Alignment.Center,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .aspectRatio(1.45f)
+                                            .aspectRatio(1f)
                                             .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
                                             .border(
                                                 1.dp,
                                                 MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
                                                 RoundedCornerShape(12.dp)
                                             )
                                             .clickable { onGifSelected(gif) }
-                                    )
+                                    ) {
+                                        AsyncImage(
+                                            model = gif.previewUrl,
+                                            imageLoader = gifImageLoader,
+                                            contentDescription = gif.title,
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .aspectRatio(1f)
+                                        )
+                                    }
                                 }
                             }
                         }

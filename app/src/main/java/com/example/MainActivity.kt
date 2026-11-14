@@ -224,6 +224,11 @@ fun MainSocialScaffold(
         }
     }
 
+    LaunchedEffect(videosState) {
+        val list = (videosState as? UiState.Success)?.data ?: return@LaunchedEffect
+        viewModel.syncPendingLocalVideos(context, list)
+    }
+
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route

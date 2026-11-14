@@ -170,6 +170,20 @@ object VideoMediaHelper {
             }
         }
 
+    suspend fun ensureUploadableLocalFile(context: Context, sourceFile: File): File? =
+        withContext(Dispatchers.IO) {
+            if (!sourceFile.exists() || sourceFile.length() <= 0L) return@withContext null
+            if (sourceFile.length() <= COMPRESS_THRESHOLD_BYTES) return@withContext sourceFile
+            val compressedFile = File(sourceFile.parentFile, "cmp_${sourceFile.name}")
+            val compressed = compressVideoIfSmaller(context, sourceFile, compressedFile)
+            if (compressed && compressedFile.exists() && compressedFile.length() in 1L..MAX_UPLOAD_BYTES) {
+                compressedFile
+            } else {
+                compressedFile.delete()
+                if (sourceFile.length() <= MAX_UPLOAD_BYTES) sourceFile else null
+            }
+        }
+
     @OptIn(UnstableApi::class)
     private suspend fun compressVideoIfSmaller(
         context: Context,
@@ -371,6 +385,9 @@ fun VideoPlayerSurface(
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
+                    if (cloudVideoId.isNotBlank() && cloudChunkCount > 0) {
+                        runCatching { VideoMediaHelper.getCloudCacheFile(context, cloudVideoId).delete() }
+                    }
                     hasPlaybackError = true
                     isBuffering = false
                 }
@@ -483,7 +500,7 @@ fun VideoPlayerSurface(
                         )
                         Text(
                             text = if (effectiveUri == null && cloudChunkCount == 0) {
-                                "Bu eski video yalnızca ilk yüklendiği cihazda kayıtlı"
+                                "Bu eski video henüz buluta yüklenmemiş. İlk yüklendiği cihazdan uygulama açıldığında otomatik eşitlenir."
                             } else {
                                 "Video oynatılamadı"
                             },

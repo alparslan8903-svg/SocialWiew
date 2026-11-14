@@ -79,10 +79,7 @@ class SocialRepository(
         val isVerifiedAdmin = isCurrentUserAdmin(current)
 
         if (existingSnap.exists()) {
-            val profile = existingSnap.toObject(
-                UserPublic::class.java,
-                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-            )
+            val profile = existingSnap.toUserPublicWithVerified()
             if (profile != null) {
                 if (isVerifiedAdmin && !profile.isVerified) {
                     val synced = runCatching {
@@ -204,10 +201,9 @@ class SocialRepository(
                 .whereEqualTo("isPublic", true)
                 .snapshots()
                 .map { snapshot ->
-                    snapshot.toObjects(
-                        UserPublic::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    ).sortedByDescending { it.followersCount }
+                    snapshot.documents
+                        .mapNotNull { it.toUserPublicWithVerified() }
+                        .sortedByDescending { it.followersCount }
                 }
                 .withFirestoreErrorLogging(OperationType.LIST, path, uid)
         )
@@ -221,10 +217,7 @@ class SocialRepository(
                 .snapshots()
                 .map { snapshot ->
                     if (!snapshot.exists()) null
-                    else snapshot.toObject(
-                        UserPublic::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    )
+                    else snapshot.toUserPublicWithVerified()
                 }
                 .withFirestoreErrorLogging(OperationType.GET, path, uid)
         )
@@ -437,35 +430,20 @@ class SocialRepository(
         }
 
         val encodedChunks: List<String> = if (!localFilePath.isNullOrBlank()) {
-            withContext(Dispatchers.IO) {
-                val file = File(localFilePath)
-                if (!file.exists() || file.length() <= 0L) {
-                    emptyList()
-                } else {
-                    require(file.length() <= MAX_CLOUD_VIDEO_BYTES) {
-                        "Video boyutu en fazla 15 MB olabilir. Lütfen daha kısa bir video seçin."
-                    }
-                    val bytes = file.readBytes()
-                    val chunks = mutableListOf<String>()
-                    var offset = 0
-                    while (offset < bytes.size) {
-                        val end = minOf(offset + CHUNK_RAW_BYTES, bytes.size)
-                        val encoded = Base64.encodeToString(bytes, offset, end - offset, Base64.NO_WRAP)
-                        chunks.add(encoded)
-                        offset = end
-                    }
-                    require(chunks.size <= MAX_CHUNKS) {
-                        "Video parça sınırı aşıldı. Lütfen daha kısa bir video seçin."
-                    }
-                    chunks
-                }
-            }
+            encodeVideoFileToChunks(File(localFilePath))
         } else {
             emptyList()
         }
 
+        if (videoUrl.isBlank()) {
+            require(encodedChunks.isNotEmpty()) {
+                "Video buluta hazırlanamadı. Lütfen videoyu yeniden seçin."
+            }
+        }
+
         val videoRef = db.collection("videos").document()
         val profileRef = db.collection("users_public").document(uid)
+        val isSingleBatch = encodedChunks.size <= CHUNKS_PER_BATCH
 
         val payload = buildMap<String, Any> {
             put("userId", uid)
@@ -477,7 +455,9 @@ class SocialRepository(
             put("videoUrl", videoUrl.trim().take(2000))
             if (!localFileName.isNullOrBlank()) put("localFileName", localFileName.take(200))
             if (!thumbnailData.isNullOrBlank()) put("thumbnailData", thumbnailData.take(150000))
-            put("chunkCount", encodedChunks.size)
+            // Write chunkCount immediately only when all chunks fit inside the initial atomic batch;
+            // for multi-batch videos, announce chunkCount=0 first and update it once all chunks land.
+            put("chunkCount", if (isSingleBatch) encodedChunks.size else 0)
             put("durationMs", durationMs.coerceAtLeast(0L))
             put("tags", tags.map { it.trim().take(24) }.filter { it.isNotEmpty() }.take(5))
             put("visibility", "public")
@@ -521,7 +501,90 @@ class SocialRepository(
             throw e
         }
 
-        var idx = firstChunkBatchCount
+        if (!isSingleBatch) {
+            uploadRemainingChunkBatches(
+                videoId = videoRef.id,
+                uid = uid,
+                encodedChunks = encodedChunks,
+                startIdx = firstChunkBatchCount
+            )
+            try {
+                videoRef.update(
+                    mapOf(
+                        "chunkCount" to encodedChunks.size,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                handleFirestoreError(e, OperationType.UPDATE, videoRef.path, auth)
+                throw e
+            }
+        }
+
+        videoRef.id
+    }
+
+    suspend fun backfillVideoChunks(videoId: String, localFilePath: String): Result<Int> = runCatching {
+        val uid = requireUserId()
+        val encodedChunks = encodeVideoFileToChunks(File(localFilePath))
+        require(encodedChunks.isNotEmpty()) { "Yerel video okunamadı." }
+
+        uploadRemainingChunkBatches(
+            videoId = videoId,
+            uid = uid,
+            encodedChunks = encodedChunks,
+            startIdx = 0
+        )
+
+        val videoRef = db.collection("videos").document(videoId)
+        try {
+            videoRef.update(
+                mapOf(
+                    "chunkCount" to encodedChunks.size,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, videoRef.path, auth)
+            throw e
+        }
+        encodedChunks.size
+    }
+
+    private suspend fun encodeVideoFileToChunks(file: File): List<String> = withContext(Dispatchers.IO) {
+        if (!file.exists() || file.length() <= 0L) {
+            return@withContext emptyList()
+        }
+        require(file.length() <= MAX_CLOUD_VIDEO_BYTES) {
+            "Video boyutu en fazla 15 MB olabilir. Lütfen daha kısa bir video seçin."
+        }
+        val bytes = file.readBytes()
+        val chunks = mutableListOf<String>()
+        var offset = 0
+        while (offset < bytes.size) {
+            val end = minOf(offset + CHUNK_RAW_BYTES, bytes.size)
+            val encoded = Base64.encodeToString(bytes, offset, end - offset, Base64.NO_WRAP)
+            chunks.add(encoded)
+            offset = end
+        }
+        require(chunks.size <= MAX_CHUNKS) {
+            "Video parça sınırı aşıldı. Lütfen daha kısa bir video seçin."
+        }
+        chunks
+    }
+
+    private suspend fun uploadRemainingChunkBatches(
+        videoId: String,
+        uid: String,
+        encodedChunks: List<String>,
+        startIdx: Int
+    ) {
+        val videoRef = db.collection("videos").document(videoId)
+        var idx = startIdx
         while (idx < encodedChunks.size) {
             val end = minOf(idx + CHUNKS_PER_BATCH, encodedChunks.size)
             val nextBatch = db.batch()
@@ -530,7 +593,7 @@ class SocialRepository(
                 nextBatch.set(
                     chunkRef,
                     mapOf(
-                        "videoId" to videoRef.id,
+                        "videoId" to videoId,
                         "userId" to uid,
                         "chunkIndex" to c,
                         "data" to encodedChunks[c],
@@ -549,37 +612,54 @@ class SocialRepository(
             }
             idx = end
         }
-
-        videoRef.id
     }
 
-    suspend fun downloadAndCacheCloudVideo(videoId: String, destFile: File): Result<File> = runCatching {
+    suspend fun downloadAndCacheCloudVideo(
+        videoId: String,
+        destFile: File,
+        expectedChunkCount: Int = 0
+    ): Result<File> = runCatching {
         requireUserId()
         if (destFile.exists() && destFile.length() > 0L) {
             return@runCatching destFile
         }
         val path = "videos/$videoId/media_chunks"
-        val snapshot = try {
-            db.collection("videos")
-                .document(videoId)
-                .collection("media_chunks")
-                .whereEqualTo("videoId", videoId)
-                .whereEqualTo("visibility", "public")
-                .get()
-                .await()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.LIST, path, auth)
-            throw e
+        var chunks: List<VideoMediaChunk> = emptyList()
+        var attempt = 0
+        while (attempt < 3) {
+            val snapshot = try {
+                db.collection("videos")
+                    .document(videoId)
+                    .collection("media_chunks")
+                    .whereEqualTo("videoId", videoId)
+                    .whereEqualTo("visibility", "public")
+                    .get()
+                    .await()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                handleFirestoreError(e, OperationType.LIST, path, auth)
+                throw e
+            }
+
+            chunks = snapshot.toObjects(
+                VideoMediaChunk::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+            ).sortedBy { it.chunkIndex }
+
+            val complete = chunks.isNotEmpty() &&
+                (expectedChunkCount <= 0 || chunks.size >= expectedChunkCount)
+            if (complete) break
+            attempt++
+            if (attempt < 3) kotlinx.coroutines.delay(900L)
         }
 
-        val chunks = snapshot.toObjects(
-            VideoMediaChunk::class.java,
-            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-        ).sortedBy { it.chunkIndex }
-
         require(chunks.isNotEmpty()) { "Video bulut parçaları bulunamadı." }
+        if (expectedChunkCount > 0) {
+            require(chunks.size >= expectedChunkCount) {
+                "Video parçaları eksik (${chunks.size}/$expectedChunkCount)."
+            }
+        }
 
         withContext(Dispatchers.IO) {
             destFile.parentFile?.mkdirs()
@@ -712,6 +792,15 @@ class SocialRepository(
             handleFirestoreError(e, OperationType.GET, docRef.path, auth)
             throw e
         }
+    }
+
+    private fun DocumentSnapshot.toUserPublicWithVerified(): UserPublic? {
+        val base = toObject(
+            UserPublic::class.java,
+            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+        ) ?: return null
+        val verifiedFlag = getBoolean("isVerified") == true || getBoolean("verified") == true
+        return if (base.isVerified == verifiedFlag) base else base.copy(isVerified = verifiedFlag)
     }
 
     private fun isCurrentUserAdmin(user: FirebaseUser?): Boolean {

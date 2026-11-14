@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -402,16 +403,34 @@ private fun ProfileHeaderSection(
 
     Spacer(modifier = Modifier.height(12.dp))
 
-    CreatorAvatar(
-        name = profile?.displayName ?: "S",
-        avatarUrl = profile?.avatarUrl ?: "",
-        size = 86.dp,
-        modifier = Modifier.testTag("profile_avatar")
-    )
+    val isAdminOwnerEmail = remember(isOwnProfile) {
+        isOwnProfile && Firebase.auth.currentUser?.email?.trim()?.equals("alparslan8903@gmail.com", ignoreCase = true) == true
+    }
+    val isVerifiedAdmin = profile?.isVerified == true || isAdminOwnerEmail
+
+    Box(contentAlignment = Alignment.BottomEnd) {
+        CreatorAvatar(
+            name = profile?.displayName ?: "S",
+            avatarUrl = profile?.avatarUrl ?: "",
+            size = 86.dp,
+            modifier = Modifier.testTag("profile_avatar")
+        )
+        if (isVerifiedAdmin) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.background,
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.background),
+                shadowElevation = 2.dp
+            ) {
+                VerifiedTickIcon(
+                    size = 24.dp,
+                    modifier = Modifier.padding(2.dp)
+                )
+            }
+        }
+    }
 
     Spacer(modifier = Modifier.height(12.dp))
-
-    val isVerifiedAdmin = profile?.isVerified == true
 
     Row(
         verticalAlignment = Alignment.CenterVertically,

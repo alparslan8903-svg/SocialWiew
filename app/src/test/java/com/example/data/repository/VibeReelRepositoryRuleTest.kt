@@ -205,6 +205,21 @@ class VibeReelRepositoryRuleTest : FirestoreEmulatorTestBase() {
         }
         assertTrue(adminProfile.isVerified)
 
+        val adminUid = auth.currentUser!!.uid
+        val observedAdminProfile = withTimeout(FLOW_TIMEOUT_MS) {
+            adminRepo.observeUserProfile(adminUid).first { it != null }
+        }
+        assertNotNull(observedAdminProfile)
+        assertTrue("Profile observe must deserialize isVerified=true", observedAdminProfile!!.isVerified)
+
+        val observedCreators = withTimeout(FLOW_TIMEOUT_MS) {
+            adminRepo.observeCreators().first { list -> list.any { it.userId == adminUid } }
+        }
+        assertTrue(
+            "Creators observe must deserialize isVerified=true",
+            observedCreators.first { it.userId == adminUid }.isVerified
+        )
+
         val adminVideoId = withTimeout(DEFAULT_TIMEOUT_MS) {
             adminRepo.publishVideo(
                 author = adminProfile,
@@ -233,6 +248,46 @@ class VibeReelRepositoryRuleTest : FirestoreEmulatorTestBase() {
             adminRepo.observeComments(adminVideoId).first { list -> list.any { it.id == adminCommentId } }
         }
         assertTrue(comments.first { it.id == adminCommentId }.authorVerified)
+
+        // Verify legacy chunkCount=0 backfill works end-to-end
+        val legacyRef = firestore.collection("videos").document()
+        val legacyTs = com.google.firebase.firestore.FieldValue.serverTimestamp()
+        withTimeout(DEFAULT_TIMEOUT_MS) {
+            legacyRef.set(
+                mapOf(
+                    "userId" to adminUid,
+                    "authorName" to adminProfile.displayName,
+                    "authorUsername" to adminProfile.username,
+                    "authorVerified" to true,
+                    "caption" to "Legacy reel",
+                    "videoUrl" to "",
+                    "localFileName" to "legacy_clip.mp4",
+                    "chunkCount" to 0,
+                    "durationMs" to 2000L,
+                    "tags" to listOf("vlog"),
+                    "visibility" to "public",
+                    "likesCount" to 0L,
+                    "commentsCount" to 0L,
+                    "createdAt" to legacyTs,
+                    "updatedAt" to legacyTs
+                )
+            ).await()
+        }
+        val legacyFile = java.io.File.createTempFile("legacy_backfill", ".mp4")
+        val legacyBytes = "LEGACY_VIDEO_BYTES_${UUID.randomUUID()}".toByteArray()
+        legacyFile.writeBytes(legacyBytes)
+        try {
+            val uploadedChunks = withTimeout(DEFAULT_TIMEOUT_MS) {
+                adminRepo.backfillVideoChunks(legacyRef.id, legacyFile.absolutePath).getOrThrow()
+            }
+            assertEquals(1, uploadedChunks)
+            val updatedLegacy = withTimeout(DEFAULT_TIMEOUT_MS) {
+                adminRepo.getVideoById(legacyRef.id)
+            }
+            assertEquals(1, updatedLegacy!!.chunkCount)
+        } finally {
+            legacyFile.delete()
+        }
     }
 
     private companion object {

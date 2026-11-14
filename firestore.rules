@@ -228,6 +228,11 @@ service cloud.firestore {
                          // Tier 1: Owner edits caption/tags
                          (existing().userId == request.auth.uid &&
                           incoming().diff(existing()).affectedKeys().hasOnly(['caption', 'tags', 'updatedAt'])) ||
+                         // Tier 1b: Owner backfills cloud chunks for legacy local-only videos
+                         (existing().userId == request.auth.uid &&
+                          (!('chunkCount' in existing()) || existing().chunkCount == 0) &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['chunkCount', 'updatedAt']) &&
+                          incoming().chunkCount > 0) ||
                          // Tier 2a: Atomic like/unlike counter backed by video_likes existence
                          (incoming().diff(existing()).affectedKeys().hasOnly(['likesCount', 'updatedAt']) && (
                            (incoming().likesCount == existing().likesCount + 1 &&

@@ -55,6 +55,8 @@ class SocialFeedViewModel(
     private val _isPublishing = MutableStateFlow(false)
     val isPublishing: StateFlow<Boolean> = _isPublishing.asStateFlow()
 
+    private val attemptedBackfillIds = mutableSetOf<String>()
+
     init {
         viewModelScope.launch {
             socialRepository.ensureUserProfile().onFailure { e ->
@@ -192,10 +194,47 @@ class SocialFeedViewModel(
         if (cacheFile.exists() && cacheFile.length() > 0L) {
             return Uri.fromFile(cacheFile)
         }
-        return socialRepository.downloadAndCacheCloudVideo(videoId, cacheFile)
+        val expectedChunkCount = (videosState.value as? UiState.Success)?.data
+            ?.firstOrNull { it.id == videoId }
+            ?.chunkCount ?: 0
+        return socialRepository.downloadAndCacheCloudVideo(
+            videoId = videoId,
+            destFile = cacheFile,
+            expectedChunkCount = expectedChunkCount
+        )
             .onFailure { Log.w(TAG, "Cloud video download failed for $videoId", it) }
             .getOrNull()
             ?.let { Uri.fromFile(it) }
+    }
+
+    fun syncPendingLocalVideos(context: Context, videos: List<VideoPost>) {
+        val pending = videos.filter { video ->
+            video.userId == currentUserId &&
+                video.chunkCount == 0 &&
+                video.videoUrl.isBlank() &&
+                video.localFileName.isNotBlank() &&
+                attemptedBackfillIds.add(video.id)
+        }
+        if (pending.isEmpty()) return
+
+        val appContext = context.applicationContext
+        viewModelScope.launch {
+            for (video in pending) {
+                val rawFile = java.io.File(java.io.File(appContext.filesDir, "videos"), video.localFileName)
+                if (!rawFile.exists() || rawFile.length() <= 0L) continue
+                val uploadFile = VideoMediaHelper.ensureUploadableLocalFile(appContext, rawFile) ?: continue
+                socialRepository.backfillVideoChunks(video.id, uploadFile.absolutePath)
+                    .onSuccess { count ->
+                        Log.i(TAG, "Backfilled $count cloud chunks for legacy video ${video.id}")
+                    }
+                    .onFailure { err ->
+                        Log.w(TAG, "Backfill failed for ${video.id}", err)
+                    }
+                if (uploadFile.absolutePath != rawFile.absolutePath) {
+                    runCatching { uploadFile.delete() }
+                }
+            }
+        }
     }
 
     fun publishVideo(
