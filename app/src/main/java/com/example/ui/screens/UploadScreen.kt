@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -113,238 +114,270 @@ fun UploadScreen(
         }
     }
 
-    Column(
+    val canPublish = !isPublishing && !isProcessingPick &&
+        (pickedVideo != null || videoUrlInput.trim().startsWith("http", ignoreCase = true))
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(modifier = Modifier.widthIn(max = 560.dp)) {
-            Text(
-                text = stringResource(id = R.string.upload_title),
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Text(
-                text = "Cihazından bir video seç veya doğrudan MP4/HLS video bağlantısı paylaş.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
-            )
+        val isExpandedTablet = maxWidth >= 840.dp
 
-            // Video Preview Box
-            Surface(
-                shape = RoundedCornerShape(22.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = if (isExpandedTablet) 32.dp else 20.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(16f / 10f)
-                    .clip(RoundedCornerShape(22.dp))
+                    .widthIn(max = if (isExpandedTablet) 1040.dp else 580.dp)
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    if (isProcessingPick) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Video hazırlanıyor...", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    text = stringResource(id = R.string.upload_title),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = "Cihazından bir video seç veya doğrudan MP4/HLS video bağlantısı paylaş.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 18.dp)
+                )
+
+                val previewAndPickerPane: @Composable (Modifier) -> Unit = { paneModifier ->
+                    Column(modifier = paneModifier) {
+                        Surface(
+                            shape = RoundedCornerShape(22.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(if (isExpandedTablet) 4f / 3f else 16f / 10f)
+                                .clip(RoundedCornerShape(22.dp))
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                if (isProcessingPick) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text("Video hazırlanıyor...", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                } else if (previewUri != null) {
+                                    VideoPlayerSurface(
+                                        videoUri = previewUri,
+                                        thumbnailBase64 = pickedVideo?.thumbnailBase64 ?: "",
+                                        isActive = true,
+                                        isMuted = true,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.padding(20.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.VideoLibrary,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(40.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = "Video önizlemesi burada görünecek",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
                         }
-                    } else if (previewUri != null) {
-                        VideoPlayerSurface(
-                            videoUri = previewUri,
-                            thumbnailBase64 = pickedVideo?.thumbnailBase64 ?: "",
-                            isActive = true,
-                            isMuted = true,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(20.dp)
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        OutlinedButton(
+                            onClick = {
+                                videoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                                )
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                                .testTag("pick_video_button")
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.VideoLibrary,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(40.dp)
+                                modifier = Modifier.size(20.dp)
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Video önizlemesi burada görünecek",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = if (pickedVideo != null) "Başka Video Seç"
+                                else stringResource(id = R.string.pick_video_gallery),
+                                style = MaterialTheme.typography.labelLarge
                             )
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(14.dp))
-
-            OutlinedButton(
-                onClick = {
-                    videoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
-                    )
-                },
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .testTag("pick_video_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.VideoLibrary,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (pickedVideo != null) "Başka Video Seç"
-                    else stringResource(id = R.string.pick_video_gallery),
-                    style = MaterialTheme.typography.labelLarge
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = videoUrlInput,
-                onValueChange = { videoUrlInput = it },
-                label = { Text("Veya Video URL'si (https://...mp4)") },
-                leadingIcon = {
-                    Icon(imageVector = Icons.Filled.Link, contentDescription = null)
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.secondary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("video_url_input")
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = caption,
-                onValueChange = { if (it.length <= 300) caption = it },
-                label = { Text("Açıklama") },
-                placeholder = { Text("Bu videonun hikayesini yaz...") },
-                minLines = 3,
-                maxLines = 4,
-                shape = RoundedCornerShape(16.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("video_caption_input")
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Text(
-                text = "Etiketler (en fazla 5)",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                SuggestedTags.forEach { tag ->
-                    val selected = selectedTags.contains(tag)
-                    FilterChip(
-                        selected = selected,
-                        onClick = {
-                            selectedTags = if (selected) {
-                                selectedTags - tag
-                            } else if (selectedTags.size < 5) {
-                                selectedTags + tag
-                            } else {
-                                selectedTags
-                            }
-                        },
-                        label = { Text("#$tag") },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                val metadataAndPublishPane: @Composable (Modifier) -> Unit = { paneModifier ->
+                    Column(modifier = paneModifier) {
+                        OutlinedTextField(
+                            value = videoUrlInput,
+                            onValueChange = { videoUrlInput = it },
+                            label = { Text("Veya Video URL'si (https://...mp4)") },
+                            leadingIcon = {
+                                Icon(imageVector = Icons.Filled.Link, contentDescription = null)
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.secondary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("video_url_input")
                         )
-                    )
-                }
-            }
 
-            if (errorNote != null) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = errorNote ?: "",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
+                        Spacer(modifier = Modifier.height(12.dp))
 
-            Spacer(modifier = Modifier.height(20.dp))
+                        OutlinedTextField(
+                            value = caption,
+                            onValueChange = { if (it.length <= 300) caption = it },
+                            label = { Text("Açıklama") },
+                            placeholder = { Text("Bu videonun hikayesini yaz...") },
+                            minLines = 3,
+                            maxLines = 4,
+                            shape = RoundedCornerShape(16.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("video_caption_input")
+                        )
 
-            val canPublish = !isPublishing && !isProcessingPick &&
-                (pickedVideo != null || videoUrlInput.trim().startsWith("http", ignoreCase = true))
+                        Spacer(modifier = Modifier.height(14.dp))
 
-            Button(
-                onClick = {
-                    errorNote = null
-                    onPublishVideo(
-                        caption,
-                        videoUrlInput.trim(),
-                        pickedVideo?.fileName,
-                        pickedVideo?.thumbnailBase64,
-                        pickedVideo?.durationMs ?: 0L,
-                        selectedTags.toList()
-                    ) {
-                        pickedVideo = null
-                        videoUrlInput = ""
-                        caption = ""
-                        selectedTags = setOf("vlog")
+                        Text(
+                            text = "Etiketler (en fazla 5)",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            SuggestedTags.forEach { tag ->
+                                val selected = selectedTags.contains(tag)
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = {
+                                        selectedTags = if (selected) {
+                                            selectedTags - tag
+                                        } else if (selectedTags.size < 5) {
+                                            selectedTags + tag
+                                        } else {
+                                            selectedTags
+                                        }
+                                    },
+                                    label = { Text("#$tag") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                )
+                            }
+                        }
+
+                        if (errorNote != null) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = errorNote ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Button(
+                            onClick = {
+                                errorNote = null
+                                onPublishVideo(
+                                    caption,
+                                    videoUrlInput.trim(),
+                                    pickedVideo?.fileName,
+                                    pickedVideo?.thumbnailBase64,
+                                    pickedVideo?.durationMs ?: 0L,
+                                    selectedTags.toList()
+                                ) {
+                                    pickedVideo = null
+                                    videoUrlInput = ""
+                                    caption = ""
+                                    selectedTags = setOf("vlog")
+                                }
+                            },
+                            enabled = canPublish,
+                            shape = RoundedCornerShape(18.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .testTag("publish_video_button")
+                        ) {
+                            if (isPublishing) {
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    strokeWidth = 2.5.dp,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Filled.CloudUpload,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = stringResource(id = R.string.publish_video),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
-                },
-                enabled = canPublish,
-                shape = RoundedCornerShape(18.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .testTag("publish_video_button")
-            ) {
-                if (isPublishing) {
-                    CircularProgressIndicator(
-                        color = Color.White,
-                        strokeWidth = 2.5.dp,
-                        modifier = Modifier.size(22.dp)
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Filled.CloudUpload,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(id = R.string.publish_video),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
                 }
+
+                if (isExpandedTablet) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        previewAndPickerPane(Modifier.weight(1f))
+                        metadataAndPublishPane(Modifier.weight(1f))
+                    }
+                } else {
+                    previewAndPickerPane(Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(14.dp))
+                    metadataAndPublishPane(Modifier.fillMaxWidth())
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
             }
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }

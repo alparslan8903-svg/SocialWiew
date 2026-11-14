@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,7 +17,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.GifBox
@@ -71,31 +74,26 @@ fun AuthScreen(
         )
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 20.dp)
-                .widthIn(max = 560.dp)
-                .align(Alignment.Center),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
+        val isExpandedTablet = maxWidth >= 840.dp
+
+        val heroPane: @Composable (Modifier) -> Unit = { paneModifier ->
+            Column(modifier = paneModifier) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(210.dp)
+                        .height(if (isExpandedTablet) 260.dp else 210.dp)
                         .clip(RoundedCornerShape(28.dp))
                 ) {
                     Image(
                         painter = painterResource(id = R.drawable.img_auth_hero),
-                        contentDescription = "VibeReel görseli",
+                        contentDescription = "SocialWiew görseli",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -148,7 +146,7 @@ fun AuthScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
                     text = "Anını çek,\ndünyayla paylaş.",
@@ -163,32 +161,34 @@ fun AuthScreen(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
 
-                Spacer(modifier = Modifier.height(24.dp))
-
+        val actionPane: @Composable (Modifier) -> Unit = { paneModifier ->
+            Column(
+                modifier = paneModifier,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 FeatureHighlightRow(
                     icon = Icons.Filled.AutoAwesome,
                     title = "Kısa Videolar Yükle",
                     subtitle = "Galerinden veya video bağlantısından anında paylaş"
                 )
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 FeatureHighlightRow(
                     icon = Icons.Filled.GroupAdd,
                     title = "İçerik Üreticilerini Takip Et",
                     subtitle = "Sevdiğin profillerin yeni videolarını kaçırma"
                 )
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 FeatureHighlightRow(
                     icon = Icons.Filled.GifBox,
                     title = "Tenor GIF ile Yorum Yap",
                     subtitle = "Videolara hareketli Tenor GIF'leriyle anında tepki ver"
                 )
-            }
 
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+                Spacer(modifier = Modifier.height(24.dp))
+
                 if (errorMessage != null) {
                     Surface(
                         color = MaterialTheme.colorScheme.error.copy(alpha = 0.14f),
@@ -252,6 +252,41 @@ fun AuthScreen(
                         )
                     }
                 }
+            }
+        }
+
+        if (isExpandedTablet) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .widthIn(max = 980.dp)
+                    .padding(horizontal = 36.dp, vertical = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(36.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                heroPane(Modifier.weight(1f))
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                    shape = RoundedCornerShape(28.dp),
+                    tonalElevation = 3.dp,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    actionPane(Modifier.padding(28.dp))
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .widthIn(max = 560.dp)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 20.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                heroPane(Modifier.fillMaxWidth())
+                Spacer(modifier = Modifier.height(24.dp))
+                actionPane(Modifier.fillMaxWidth())
             }
         }
     }

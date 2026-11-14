@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -37,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,127 +72,150 @@ fun DiscoverScreen(
     followingIds: Set<String>,
     onToggleFollow: (String) -> Unit,
     onOpenCreatorProfile: (String) -> Unit,
-    onOpenVideoPlayer: (VideoPost) -> Unit
+    onOpenVideoPlayer: (VideoPost) -> Unit,
+    onNavigateToSearch: () -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
 
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
     ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Text(
-                text = "Keşfet",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Filled.Search,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+        val isTablet = maxWidth >= 600.dp
+        val horizontalPad = if (isTablet) 24.dp else 16.dp
+        val minGridCell = if (maxWidth >= 840.dp) 210.dp else if (isTablet) 185.dp else 165.dp
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.padding(horizontal = horizontalPad, vertical = 12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Keşfet",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
-                },
-                placeholder = { Text("İçerik üreticisi, etiket veya video ara...") },
-                singleLine = true,
-                shape = RoundedCornerShape(18.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("discover_search_input")
-            )
-        }
-
-        val creators = (creatorsState as? UiState.Success)?.data.orEmpty().filter { creator ->
-            searchQuery.isBlank() ||
-                creator.displayName.contains(searchQuery, ignoreCase = true) ||
-                creator.username.contains(searchQuery, ignoreCase = true)
-        }
-
-        val videos = (videosState as? UiState.Success)?.data.orEmpty().filter { video ->
-            searchQuery.isBlank() ||
-                video.caption.contains(searchQuery, ignoreCase = true) ||
-                video.authorUsername.contains(searchQuery, ignoreCase = true) ||
-                video.tags.any { it.contains(searchQuery, ignoreCase = true) }
-        }
-
-        if (creatorsState is UiState.Loading && videosState is UiState.Loading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 165.dp),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                if (creators.isNotEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        Column {
-                            Text(
-                                text = "Öne Çıkan İçerik Üreticileri",
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(creators, key = { it.userId }) { creator ->
-                                    CreatorDiscoveryCard(
-                                        creator = creator,
-                                        isCurrentUser = creator.userId == currentUserId,
-                                        isFollowing = followingIds.contains(creator.userId),
-                                        onToggleFollow = { onToggleFollow(creator.userId) },
-                                        onClick = { onOpenCreatorProfile(creator.userId) }
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Topluluk Videoları",
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            )
-                        }
+                    TextButton(onClick = onNavigateToSearch) {
+                        Icon(
+                            imageVector = Icons.Filled.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Trend & Gelişmiş Arama")
                     }
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Filled.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    placeholder = { Text("İçerik üreticisi, etiket veya video ara...") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(18.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 640.dp)
+                        .testTag("discover_search_input")
+                )
+            }
 
-                if (videos.isEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                            shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 12.dp)
-                        ) {
-                            Text(
-                                text = "Aramanızla eşleşen video bulunamadı.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(24.dp)
-                            )
+            val creators = (creatorsState as? UiState.Success)?.data.orEmpty().filter { creator ->
+                searchQuery.isBlank() ||
+                    creator.displayName.contains(searchQuery, ignoreCase = true) ||
+                    creator.username.contains(searchQuery, ignoreCase = true)
+            }
+
+            val videos = (videosState as? UiState.Success)?.data.orEmpty().filter { video ->
+                searchQuery.isBlank() ||
+                    video.caption.contains(searchQuery, ignoreCase = true) ||
+                    video.authorUsername.contains(searchQuery, ignoreCase = true) ||
+                    video.tags.any { it.contains(searchQuery, ignoreCase = true) }
+            }
+
+            if (creatorsState is UiState.Loading && videosState is UiState.Loading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = minGridCell),
+                    contentPadding = PaddingValues(start = horizontalPad, end = horizontalPad, bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    if (creators.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Column {
+                                Text(
+                                    text = "Öne Çıkan İçerik Üreticileri",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    items(creators, key = { it.userId }) { creator ->
+                                        CreatorDiscoveryCard(
+                                            creator = creator,
+                                            isCurrentUser = creator.userId == currentUserId,
+                                            isFollowing = followingIds.contains(creator.userId),
+                                            onToggleFollow = { onToggleFollow(creator.userId) },
+                                            onClick = { onOpenCreatorProfile(creator.userId) }
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "Topluluk Videoları",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            }
                         }
                     }
-                } else {
-                    items(videos, key = { it.id }) { video ->
-                        VideoGridCard(
-                            video = video,
-                            onClick = { onOpenVideoPlayer(video) }
-                        )
+
+                    if (videos.isEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                shape = RoundedCornerShape(20.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 12.dp)
+                            ) {
+                                Text(
+                                    text = "Aramanızla eşleşen video bulunamadı.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(24.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        items(videos, key = { it.id }) { video ->
+                            VideoGridCard(
+                                video = video,
+                                onClick = { onOpenVideoPlayer(video) }
+                            )
+                        }
                     }
                 }
             }

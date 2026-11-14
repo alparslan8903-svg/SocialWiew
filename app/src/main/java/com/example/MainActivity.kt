@@ -5,28 +5,37 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.AddCircleOutline
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +44,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -50,10 +60,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
@@ -81,6 +94,7 @@ import com.example.ui.components.CommentsBottomSheet
 import com.example.ui.screens.DiscoverScreen
 import com.example.ui.screens.FeedScreen
 import com.example.ui.screens.ProfileScreen
+import com.example.ui.screens.SearchScreen
 import com.example.ui.screens.UploadScreen
 import com.example.ui.screens.VideoFeedPage
 import com.example.ui.theme.VibeReelTheme
@@ -94,6 +108,7 @@ import kotlinx.coroutines.launch
 object VibeRoutes {
     const val FEED = "feed"
     const val DISCOVER = "discover"
+    const val SEARCH = "search"
     const val UPLOAD = "upload"
     const val PROFILE = "profile"
     const val CREATOR_PROFILE = "creator/{userId}"
@@ -111,6 +126,7 @@ private data class NavTabItem(
 private val TopTabs = listOf(
     NavTabItem(VibeRoutes.FEED, R.string.nav_feed, Icons.Filled.Home, Icons.Outlined.Home, "nav_feed"),
     NavTabItem(VibeRoutes.DISCOVER, R.string.nav_discover, Icons.Filled.Explore, Icons.Outlined.Explore, "nav_discover"),
+    NavTabItem(VibeRoutes.SEARCH, R.string.nav_search, Icons.Filled.Search, Icons.Outlined.Search, "nav_search"),
     NavTabItem(VibeRoutes.UPLOAD, R.string.nav_upload, Icons.Filled.AddCircle, Icons.Outlined.AddCircleOutline, "nav_upload"),
     NavTabItem(VibeRoutes.PROFILE, R.string.nav_profile, Icons.Filled.Person, Icons.Outlined.Person, "nav_profile")
 )
@@ -193,7 +209,6 @@ fun MainSocialScaffold(
 
     val videosState by viewModel.videosState.collectAsStateWithLifecycle()
     val creatorsState by viewModel.creatorsState.collectAsStateWithLifecycle()
-    val currentUserProfile by viewModel.currentUserProfile.collectAsStateWithLifecycle()
     val followingIds by viewModel.followingIds.collectAsStateWithLifecycle()
     val likedVideoIds by viewModel.likedVideoIds.collectAsStateWithLifecycle()
     val selectedVideoForComments by viewModel.selectedVideoForComments.collectAsStateWithLifecycle()
@@ -268,22 +283,55 @@ fun MainSocialScaffold(
             ) {
                 if (useRail && fullScreenVideo == null) {
                     NavigationRail(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ) {
-                        TopTabs.forEach { item ->
-                            val selected = currentRoute == item.route
-                            NavigationRailItem(
-                                selected = selected,
-                                onClick = { navigateToTab(item.route) },
-                                icon = {
-                                    Icon(
-                                        imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                                        contentDescription = stringResource(id = item.labelRes)
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        header = {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(top = 12.dp, bottom = 16.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = Color.White,
+                                    shadowElevation = 3.dp
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.ic_socialwiew_logo),
+                                        contentDescription = stringResource(id = R.string.app_name),
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .padding(3.dp)
+                                            .clip(RoundedCornerShape(10.dp))
                                     )
-                                },
-                                label = { Text(stringResource(id = item.labelRes)) },
-                                modifier = Modifier.testTag(item.testTag)
-                            )
+                                }
+                            }
+                        }
+                    ) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            TopTabs.forEach { item ->
+                                val selected = currentRoute == item.route
+                                NavigationRailItem(
+                                    selected = selected,
+                                    onClick = { navigateToTab(item.route) },
+                                    icon = {
+                                        Icon(
+                                            imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                                            contentDescription = stringResource(id = item.labelRes)
+                                        )
+                                    },
+                                    label = { Text(stringResource(id = item.labelRes)) },
+                                    alwaysShowLabel = true,
+                                    colors = NavigationRailItemDefaults.colors(
+                                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                                        indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                                    ),
+                                    modifier = Modifier.testTag(item.testTag)
+                                )
+                            }
                         }
                     }
                 }
@@ -307,12 +355,29 @@ fun MainSocialScaffold(
                                 else navController.navigate(VibeRoutes.creatorRoute(uid))
                             },
                             onNavigateToUpload = { navigateToTab(VibeRoutes.UPLOAD) },
-                            onNavigateToDiscover = { navigateToTab(VibeRoutes.DISCOVER) }
+                            onNavigateToDiscover = { navigateToTab(VibeRoutes.DISCOVER) },
+                            onNavigateToSearch = { navigateToTab(VibeRoutes.SEARCH) }
                         )
                     }
 
                     composable(VibeRoutes.DISCOVER) {
                         DiscoverScreen(
+                            creatorsState = creatorsState,
+                            videosState = videosState,
+                            currentUserId = currentUserId,
+                            followingIds = followingIds,
+                            onToggleFollow = viewModel::toggleFollow,
+                            onOpenCreatorProfile = { uid ->
+                                if (uid == currentUserId) navigateToTab(VibeRoutes.PROFILE)
+                                else navController.navigate(VibeRoutes.creatorRoute(uid))
+                            },
+                            onOpenVideoPlayer = { video -> fullScreenVideo = video },
+                            onNavigateToSearch = { navigateToTab(VibeRoutes.SEARCH) }
+                        )
+                    }
+
+                    composable(VibeRoutes.SEARCH) {
+                        SearchScreen(
                             creatorsState = creatorsState,
                             videosState = videosState,
                             currentUserId = currentUserId,
@@ -387,7 +452,7 @@ fun MainSocialScaffold(
             }
         }
 
-        // Full-Screen Video Modal when opened from Discover or Profile grids
+        // Full-Screen Video Modal when opened from Discover, Search, or Profile grids
         fullScreenVideo?.let { activeVideo ->
             val liveVideo = (videosState as? UiState.Success)?.data
                 ?.firstOrNull { it.id == activeVideo.id } ?: activeVideo
@@ -395,7 +460,7 @@ fun MainSocialScaffold(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black)
+                    .background(Color(0xFF06070B))
             ) {
                 VideoFeedPage(
                     video = liveVideo,

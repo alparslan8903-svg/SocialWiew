@@ -4,8 +4,13 @@
     <string name="sign_in_google">Google ile Giriş Yap</string>
     <string name="nav_feed">Akış</string>
     <string name="nav_discover">Keşfet</string>
+    <string name="nav_search">Ara</string>
     <string name="nav_upload">Yükle</string>
     <string name="nav_profile">Profil</string>
+    <string name="search_title">Ara ve Keşfet</string>
+    <string name="search_hint">Üretici, @kullanıcı veya #etiket ara...</string>
+    <string name="search_creators_section">Yeni İçerik Üreticileri</string>
+    <string name="search_trending_section">Trend Videolar</string>
     <string name="tab_for_you">Senin İçin</string>
     <string name="tab_following">Takip</string>
     <string name="follow">Takip Et</string>

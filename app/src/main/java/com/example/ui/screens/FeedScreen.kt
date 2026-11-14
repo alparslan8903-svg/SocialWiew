@@ -5,14 +5,18 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -32,14 +37,18 @@ import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.GifBox
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -83,7 +92,8 @@ fun FeedScreen(
     onOpenComments: (VideoPost) -> Unit,
     onOpenCreatorProfile: (String) -> Unit,
     onNavigateToUpload: () -> Unit,
-    onNavigateToDiscover: () -> Unit
+    onNavigateToDiscover: () -> Unit,
+    onNavigateToSearch: () -> Unit = {}
 ) {
     var selectedFeedTab by remember { mutableIntStateOf(0) } // 0 = For You, 1 = Following
     var isMuted by remember { mutableStateOf(false) }
@@ -156,7 +166,7 @@ fun FeedScreen(
             }
         }
 
-        // Top Floating Tab Bar (For You / Following + Mute)
+        // Top Floating Tab Bar (Search + For You / Following + Mute)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -165,7 +175,21 @@ fun FeedScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Spacer(modifier = Modifier.size(48.dp))
+            Surface(
+                shape = CircleShape,
+                color = Color.Black.copy(alpha = 0.48f)
+            ) {
+                IconButton(
+                    onClick = onNavigateToSearch,
+                    modifier = Modifier.testTag("feed_search_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = "Ara",
+                        tint = Color.White
+                    )
+                }
+            }
 
             Surface(
                 color = Color.Black.copy(alpha = 0.48f),
@@ -254,173 +278,397 @@ fun VideoFeedPage(
         label = "likeScale"
     )
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        VideoPlayerSurface(
-            videoUri = videoUri,
-            thumbnailBase64 = video.thumbnailData,
-            isActive = isActive,
-            isMuted = isMuted,
-            modifier = Modifier.fillMaxSize()
-        )
+    val shareAction: () -> Unit = {
+        val shareText = buildString {
+            append("SocialWiew'de @${video.authorUsername} videosunu izle!")
+            if (video.caption.isNotBlank()) append("\n${video.caption}")
+            if (video.videoUrl.isNotBlank()) append("\n${video.videoUrl}")
+        }
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, shareText)
+        }
+        context.startActivity(Intent.createChooser(intent, "Videoyu Paylaş"))
+    }
 
-        // Bottom readability scrim
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(260.dp)
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
-                    )
-                )
-        )
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isTabletExpanded = maxWidth >= 840.dp
+        val isMediumOrLarger = maxWidth >= 600.dp
 
-        // Right-side action rail
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 14.dp, bottom = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp)
-        ) {
-            Box(contentAlignment = Alignment.BottomCenter) {
-                CreatorAvatar(
-                    name = video.authorName,
-                    avatarUrl = video.authorAvatarUrl,
-                    size = 48.dp,
+        if (isTabletExpanded) {
+            // Tablet Studio Split View: Centered 9:16 Theater Stage + Supporting Details Pane
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 32.dp, vertical = 20.dp)
+                    .padding(top = 56.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
                     modifier = Modifier
-                        .clickable { onOpenCreator() }
-                        .testTag("video_author_avatar")
-                )
-                if (!isOwnVideo) {
-                    Surface(
-                        shape = CircleShape,
-                        color = if (isFollowingCreator) MaterialTheme.colorScheme.secondary
-                        else MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .padding(top = 36.dp)
-                            .size(22.dp)
-                            .clip(CircleShape)
-                            .clickable { onToggleFollow() }
-                            .testTag("quick_follow_button")
+                        .fillMaxHeight(0.92f)
+                        .aspectRatio(9f / 16f)
+                        .widthIn(max = 440.dp)
+                        .clip(RoundedCornerShape(28.dp))
+                        .border(
+                            width = 1.dp,
+                            color = Color.White.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(28.dp)
+                        )
+                        .background(Color.Black)
+                ) {
+                    VideoPlayerSurface(
+                        videoUri = videoUri,
+                        thumbnailBase64 = video.thumbnailData,
+                        isActive = isActive,
+                        isMuted = isMuted,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(28.dp))
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                    shape = RoundedCornerShape(28.dp),
+                    tonalElevation = 4.dp,
+                    modifier = Modifier
+                        .widthIn(min = 300.dp, max = 380.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(22.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable { onOpenCreator() }
+                                .padding(4.dp)
+                        ) {
+                            CreatorAvatar(
+                                name = video.authorName,
+                                avatarUrl = video.authorAvatarUrl,
+                                size = 52.dp,
+                                modifier = Modifier.testTag("video_author_avatar")
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = video.authorName.ifBlank { video.authorUsername },
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "@${video.authorUsername}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        if (!isOwnVideo) {
+                            Button(
+                                onClick = onToggleFollow,
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isFollowingCreator) MaterialTheme.colorScheme.surfaceVariant
+                                    else MaterialTheme.colorScheme.primary,
+                                    contentColor = if (isFollowingCreator) MaterialTheme.colorScheme.onSurface
+                                    else Color.White
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("quick_follow_button")
+                            ) {
+                                Text(
+                                    text = if (isFollowingCreator) stringResource(id = R.string.following)
+                                    else stringResource(id = R.string.follow)
+                                )
+                            }
+                        }
+
+                        if (video.caption.isNotBlank()) {
+                            Text(
+                                text = video.caption,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        if (video.tags.isNotEmpty()) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                video.tags.forEach { tag ->
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text(
+                                            text = "#$tag",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            FilledTonalButton(
+                                onClick = onToggleLike,
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = if (isLiked) MaterialTheme.colorScheme.primaryContainer
+                                    else MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("video_like_button")
+                            ) {
+                                Icon(
+                                    imageVector = if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                    contentDescription = "Beğen",
+                                    tint = if (isLiked) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.scale(likeScale).size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("${video.likesCount}")
+                            }
+
+                            OutlinedButton(
+                                onClick = shareAction,
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("video_share_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Share,
+                                    contentDescription = "Videoyu paylaş",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Paylaş")
+                            }
+                        }
+
+                        Button(
+                            onClick = onOpenComments,
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary,
+                                contentColor = Color.Black
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .testTag("video_comment_button")
+                        ) {
                             Icon(
-                                imageVector = if (isFollowingCreator) Icons.Filled.Check else Icons.Filled.Add,
-                                contentDescription = if (isFollowingCreator) "Takip ediliyor" else "Takip et",
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp)
+                                imageVector = Icons.Filled.GifBox,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Yorumlar & Tenor GIF (${video.commentsCount})",
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
             }
-
-            ActionRailButton(
-                icon = if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                tint = if (isLiked) MaterialTheme.colorScheme.primary else Color.White,
-                countText = video.likesCount.toString(),
-                contentDescription = "Beğen",
-                onClick = onToggleLike,
-                iconModifier = Modifier.scale(likeScale),
-                modifier = Modifier.testTag("video_like_button")
-            )
-
-            ActionRailButton(
-                icon = Icons.Filled.ChatBubble,
-                tint = Color.White,
-                countText = video.commentsCount.toString(),
-                contentDescription = "Yorumlar",
-                onClick = onOpenComments,
-                modifier = Modifier.testTag("video_comment_button")
-            )
-
-            ActionRailButton(
-                icon = Icons.Filled.Share,
-                tint = Color.White,
-                countText = "Paylaş",
-                contentDescription = "Videoyu paylaş",
-                onClick = {
-                    val shareText = buildString {
-                        append("SocialWiew'de @${video.authorUsername} videosunu izle!")
-                        if (video.caption.isNotBlank()) append("\n${video.caption}")
-                        if (video.videoUrl.isNotBlank()) append("\n${video.videoUrl}")
-                    }
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, shareText)
-                    }
-                    context.startActivity(Intent.createChooser(intent, "Videoyu Paylaş"))
-                },
-                modifier = Modifier.testTag("video_share_button")
-            )
-        }
-
-        // Bottom-left caption & tags
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth(0.78f)
-                .padding(start = 16.dp, bottom = 24.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable { onOpenCreator() }
+        } else {
+            // Compact & Medium (centered portrait stage on medium tablets, full-bleed on phones)
+            Box(
+                modifier = Modifier
+                    .then(
+                        if (isMediumOrLarger) {
+                            Modifier
+                                .align(Alignment.Center)
+                                .padding(top = 64.dp, bottom = 20.dp)
+                                .fillMaxHeight(0.94f)
+                                .widthIn(max = 460.dp)
+                                .clip(RoundedCornerShape(26.dp))
+                        } else {
+                            Modifier.fillMaxSize()
+                        }
+                    )
             ) {
-                Text(
-                    text = "@${video.authorUsername}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
+                VideoPlayerSurface(
+                    videoUri = videoUri,
+                    thumbnailBase64 = video.thumbnailData,
+                    isActive = isActive,
+                    isMuted = isMuted,
+                    modifier = Modifier.fillMaxSize()
                 )
-                if (!isOwnVideo) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Surface(
-                        color = if (isFollowingCreator) Color.White.copy(alpha = 0.2f)
-                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.clickable { onToggleFollow() }
+
+                // Bottom readability scrim
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(260.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                            )
+                        )
+                )
+
+                // Right-side action rail
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 14.dp, bottom = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    Box(contentAlignment = Alignment.BottomCenter) {
+                        CreatorAvatar(
+                            name = video.authorName,
+                            avatarUrl = video.authorAvatarUrl,
+                            size = 48.dp,
+                            modifier = Modifier
+                                .clickable { onOpenCreator() }
+                                .testTag("video_author_avatar")
+                        )
+                        if (!isOwnVideo) {
+                            Surface(
+                                shape = CircleShape,
+                                color = if (isFollowingCreator) MaterialTheme.colorScheme.secondary
+                                else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .padding(top = 36.dp)
+                                    .size(22.dp)
+                                    .clip(CircleShape)
+                                    .clickable { onToggleFollow() }
+                                    .testTag("quick_follow_button")
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = if (isFollowingCreator) Icons.Filled.Check else Icons.Filled.Add,
+                                        contentDescription = if (isFollowingCreator) "Takip ediliyor" else "Takip et",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    ActionRailButton(
+                        icon = if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        tint = if (isLiked) MaterialTheme.colorScheme.primary else Color.White,
+                        countText = video.likesCount.toString(),
+                        contentDescription = "Beğen",
+                        onClick = onToggleLike,
+                        iconModifier = Modifier.scale(likeScale),
+                        modifier = Modifier.testTag("video_like_button")
+                    )
+
+                    ActionRailButton(
+                        icon = Icons.Filled.ChatBubble,
+                        tint = Color.White,
+                        countText = video.commentsCount.toString(),
+                        contentDescription = "Yorumlar",
+                        onClick = onOpenComments,
+                        modifier = Modifier.testTag("video_comment_button")
+                    )
+
+                    ActionRailButton(
+                        icon = Icons.Filled.Share,
+                        tint = Color.White,
+                        countText = "Paylaş",
+                        contentDescription = "Videoyu paylaş",
+                        onClick = shareAction,
+                        modifier = Modifier.testTag("video_share_button")
+                    )
+                }
+
+                // Bottom-left caption & tags
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth(0.78f)
+                        .padding(start = 16.dp, bottom = 24.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { onOpenCreator() }
                     ) {
                         Text(
-                            text = if (isFollowingCreator) stringResource(id = R.string.following)
-                            else stringResource(id = R.string.follow),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            text = "@${video.authorUsername}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        if (!isOwnVideo) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                color = if (isFollowingCreator) Color.White.copy(alpha = 0.2f)
+                                else MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.clickable { onToggleFollow() }
+                            ) {
+                                Text(
+                                    text = if (isFollowingCreator) stringResource(id = R.string.following)
+                                    else stringResource(id = R.string.follow),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    if (video.caption.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = video.caption,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.95f),
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                }
-            }
 
-            if (video.caption.isNotBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = video.caption,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.95f),
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            if (video.tags.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    video.tags.forEach { tag ->
-                        Surface(
-                            color = Color.White.copy(alpha = 0.16f),
-                            shape = RoundedCornerShape(8.dp)
+                    if (video.tags.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text(
-                                text = "#$tag",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
+                            video.tags.forEach { tag ->
+                                Surface(
+                                    color = Color.White.copy(alpha = 0.16f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = "#$tag",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -503,7 +751,8 @@ private fun EmptyFeedView(
             else "Topluluğun ilk kısa videosunu paylaşarak SocialWiew'i başlat!",
             style = MaterialTheme.typography.bodyMedium,
             color = Color.White.copy(alpha = 0.72f),
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 420.dp)
         )
         Spacer(modifier = Modifier.height(22.dp))
         Button(
