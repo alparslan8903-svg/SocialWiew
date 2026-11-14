@@ -110,10 +110,9 @@ test("Authenticated user: can create own public profile and rejects ghost fields
     })
   );
 
-  // Shadow update with ghost field isVerified fails
+  // Unauthorized elevation of isVerified fails for regular users
   await assertFails(
     aliceDb.collection("users_public").doc(ALICE_UID).update({
-      bio: "Updated bio",
       isVerified: true,
       updatedAt: pastTs(),
     })
@@ -343,4 +342,92 @@ test("Cloud video media_chunks: creator can upload chunks atomically, others can
     bobDb.collection("videos").doc("vid_cloud").collection("media_chunks").doc("0").delete()
   );
 });
+
+test("Admin verification: alparslan8903@gmail.com can claim verified badge while others cannot spoof it", async () => {
+  const adminUid = "admin_alparslan";
+  const adminDb = testEnv.authenticatedContext(adminUid, {
+    email: "alparslan8903@gmail.com",
+    email_verified: true,
+  }).firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, {
+    email: "alice@example.com",
+    email_verified: true,
+  }).firestore();
+  const ts = pastTs();
+
+  // Regular user cannot create profile with isVerified = true
+  await assertFails(
+    aliceDb.collection("users_public").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      displayName: "Alice",
+      username: "alice_vibes",
+      isVerified: true,
+      followersCount: 0,
+      followingCount: 0,
+      videosCount: 0,
+      isPublic: true,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Regular user cannot spoof authorVerified = true on video
+  await assertFails(
+    aliceDb.collection("videos").doc("spoof_vid").set({
+      userId: ALICE_UID,
+      authorName: "Alice",
+      authorUsername: "alice_vibes",
+      authorVerified: true,
+      caption: "Spoof verified",
+      videoUrl: "https://example.com/v.mp4",
+      durationMs: 4000,
+      tags: ["vlog"],
+      visibility: "public",
+      likesCount: 0,
+      commentsCount: 0,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Admin creates profile without verified flag, then promotes isVerified cleanly
+  await assertSucceeds(
+    adminDb.collection("users_public").doc(adminUid).set({
+      userId: adminUid,
+      displayName: "Alparslan",
+      username: "alparslan8903",
+      isVerified: false,
+      followersCount: 0,
+      followingCount: 0,
+      videosCount: 0,
+      isPublic: true,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+  await assertSucceeds(
+    adminDb.collection("users_public").doc(adminUid).update({
+      isVerified: true,
+      updatedAt: pastTs(),
+    })
+  );
+  await assertSucceeds(
+    adminDb.collection("videos").doc("admin_vid").set({
+      userId: adminUid,
+      authorName: "Alparslan",
+      authorUsername: "alparslan8903",
+      authorVerified: true,
+      caption: "Admin video",
+      videoUrl: "https://example.com/v.mp4",
+      durationMs: 4000,
+      tags: ["admin"],
+      visibility: "public",
+      likesCount: 0,
+      commentsCount: 0,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+});
+
 

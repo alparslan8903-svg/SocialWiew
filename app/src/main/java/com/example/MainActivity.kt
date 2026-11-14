@@ -209,6 +209,7 @@ fun MainSocialScaffold(
 
     val videosState by viewModel.videosState.collectAsStateWithLifecycle()
     val creatorsState by viewModel.creatorsState.collectAsStateWithLifecycle()
+    val verifiedUserIds by viewModel.verifiedUserIds.collectAsStateWithLifecycle()
     val followingIds by viewModel.followingIds.collectAsStateWithLifecycle()
     val likedVideoIds by viewModel.likedVideoIds.collectAsStateWithLifecycle()
     val selectedVideoForComments by viewModel.selectedVideoForComments.collectAsStateWithLifecycle()
@@ -345,6 +346,7 @@ fun MainSocialScaffold(
                         FeedScreen(
                             videosState = videosState,
                             currentUserId = currentUserId,
+                            verifiedUserIds = verifiedUserIds,
                             followingIds = followingIds,
                             likedVideoIds = likedVideoIds,
                             onToggleLike = viewModel::toggleLike,
@@ -368,6 +370,7 @@ fun MainSocialScaffold(
                             creatorsState = creatorsState,
                             videosState = videosState,
                             currentUserId = currentUserId,
+                            verifiedUserIds = verifiedUserIds,
                             followingIds = followingIds,
                             onToggleFollow = viewModel::toggleFollow,
                             onOpenCreatorProfile = { uid ->
@@ -384,6 +387,7 @@ fun MainSocialScaffold(
                             creatorsState = creatorsState,
                             videosState = videosState,
                             currentUserId = currentUserId,
+                            verifiedUserIds = verifiedUserIds,
                             followingIds = followingIds,
                             onToggleFollow = viewModel::toggleFollow,
                             onOpenCreatorProfile = { uid ->
@@ -471,6 +475,7 @@ fun MainSocialScaffold(
                     isActive = selectedVideoForComments == null,
                     isMuted = false,
                     isOwnVideo = liveVideo.userId == currentUserId,
+                    isAuthorVerified = liveVideo.authorVerified || verifiedUserIds.contains(liveVideo.userId),
                     isFollowingCreator = followingIds.contains(liveVideo.userId),
                     isLiked = likedVideoIds.contains(liveVideo.id),
                     onToggleLike = { viewModel.toggleLike(liveVideo) },
@@ -510,6 +515,7 @@ fun MainSocialScaffold(
             CommentsBottomSheet(
                 video = liveVideo,
                 currentUserId = currentUserId,
+                verifiedUserIds = verifiedUserIds,
                 commentsState = commentsState,
                 tenorState = tenorState,
                 onLoadTenorGifs = viewModel::loadTenorGifs,

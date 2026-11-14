@@ -78,6 +78,8 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.model.VideoPost
 import com.example.ui.components.CreatorAvatar
+import com.example.ui.components.VerifiedAdminBadge
+import com.example.ui.components.VerifiedTickIcon
 import com.example.ui.components.VideoMediaHelper
 import com.example.ui.components.VideoPlayerSurface
 import com.example.ui.viewmodel.UiState
@@ -86,6 +88,7 @@ import com.example.ui.viewmodel.UiState
 fun FeedScreen(
     videosState: UiState<List<VideoPost>>,
     currentUserId: String,
+    verifiedUserIds: Set<String> = emptySet(),
     followingIds: Set<String>,
     likedVideoIds: Set<String>,
     onToggleLike: (VideoPost) -> Unit,
@@ -156,6 +159,7 @@ fun FeedScreen(
                             isActive = isActive,
                             isMuted = isMuted,
                             isOwnVideo = video.userId == currentUserId,
+                            isAuthorVerified = video.authorVerified || verifiedUserIds.contains(video.userId),
                             isFollowingCreator = followingIds.contains(video.userId),
                             isLiked = likedVideoIds.contains(video.id),
                             onToggleLike = { onToggleLike(video) },
@@ -264,6 +268,7 @@ fun VideoFeedPage(
     isActive: Boolean,
     isMuted: Boolean,
     isOwnVideo: Boolean,
+    isAuthorVerified: Boolean = video.authorVerified,
     isFollowingCreator: Boolean,
     isLiked: Boolean,
     onToggleLike: () -> Unit,
@@ -363,13 +368,20 @@ fun VideoFeedPage(
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = video.authorName.ifBlank { video.authorUsername },
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = video.authorName.ifBlank { video.authorUsername },
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    if (isAuthorVerified) {
+                                        Spacer(modifier = Modifier.width(5.dp))
+                                        VerifiedTickIcon(size = 18.dp)
+                                    }
+                                }
                                 Text(
                                     text = "@${video.authorUsername}",
                                     style = MaterialTheme.typography.bodySmall,
@@ -377,6 +389,10 @@ fun VideoFeedPage(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
+                                if (isAuthorVerified) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    VerifiedAdminBadge(label = "Admin")
+                                }
                             }
                         }
 
@@ -630,6 +646,10 @@ fun VideoFeedPage(
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
+                        if (isAuthorVerified) {
+                            Spacer(modifier = Modifier.width(5.dp))
+                            VerifiedTickIcon(size = 17.dp)
+                        }
                         if (!isOwnVideo) {
                             Spacer(modifier = Modifier.width(8.dp))
                             Surface(

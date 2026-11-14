@@ -91,6 +91,7 @@ private val GifQuickMoods = listOf(
 fun CommentsBottomSheet(
     video: VideoPost,
     currentUserId: String,
+    verifiedUserIds: Set<String> = emptySet(),
     commentsState: UiState<List<VideoComment>>,
     tenorState: TenorUiState,
     onLoadTenorGifs: (String) -> Unit,
@@ -203,6 +204,7 @@ fun CommentsBottomSheet(
                                     CommentItemRow(
                                         comment = comment,
                                         isOwner = comment.userId == currentUserId,
+                                        isAuthorVerified = comment.authorVerified || verifiedUserIds.contains(comment.userId),
                                         gifImageLoader = gifImageLoader,
                                         onDelete = { onDeleteComment(comment.id) }
                                     )
@@ -317,6 +319,7 @@ fun CommentsBottomSheet(
 private fun CommentItemRow(
     comment: VideoComment,
     isOwner: Boolean,
+    isAuthorVerified: Boolean,
     gifImageLoader: ImageLoader,
     onDelete: () -> Unit
 ) {
@@ -331,13 +334,20 @@ private fun CommentItemRow(
         )
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "@${comment.authorUsername}",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "@${comment.authorUsername}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (isAuthorVerified) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    VerifiedTickIcon(size = 14.dp)
+                }
+            }
             if (comment.text.isNotBlank()) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(

@@ -25,15 +25,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -557,3 +565,54 @@ fun CreatorAvatar(
         }
     }
 }
+
+val VerifiedBlue = Color(0xFF1D9BF0)
+
+@Composable
+fun VerifiedTickIcon(
+    size: Dp = 16.dp,
+    modifier: Modifier = Modifier
+) {
+    Icon(
+        imageVector = Icons.Filled.Verified,
+        contentDescription = "Doğrulanmış Admin Hesabı",
+        tint = VerifiedBlue,
+        modifier = modifier
+            .size(size)
+            .testTag("verified_tick_icon")
+    )
+}
+
+@Composable
+fun VerifiedAdminBadge(
+    label: String = "Admin • Doğrulanmış",
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = VerifiedBlue.copy(alpha = 0.14f),
+        shape = RoundedCornerShape(999.dp),
+        border = BorderStroke(1.dp, VerifiedBlue.copy(alpha = 0.45f)),
+        modifier = modifier.testTag("verified_admin_badge")
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Verified,
+                contentDescription = "Doğrulanmış Admin",
+                tint = VerifiedBlue,
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(modifier = Modifier.width(5.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = VerifiedBlue
+            )
+        }
+    }
+}
+

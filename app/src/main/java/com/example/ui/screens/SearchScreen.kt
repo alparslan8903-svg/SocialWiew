@@ -80,6 +80,7 @@ import com.example.R
 import com.example.data.model.UserPublic
 import com.example.data.model.VideoPost
 import com.example.ui.components.CreatorAvatar
+import com.example.ui.components.VerifiedTickIcon
 import com.example.ui.components.VideoMediaHelper
 import com.example.ui.viewmodel.UiState
 import com.google.firebase.Timestamp
@@ -97,6 +98,7 @@ fun SearchScreen(
     creatorsState: UiState<List<UserPublic>>,
     videosState: UiState<List<VideoPost>>,
     currentUserId: String,
+    verifiedUserIds: Set<String> = emptySet(),
     followingIds: Set<String>,
     onToggleFollow: (String) -> Unit,
     onOpenCreatorProfile: (String) -> Unit,
@@ -474,6 +476,7 @@ fun SearchScreen(
                                 itemsIndexed(trendingVideos, key = { _, v -> v.id }) { index, video ->
                                     TrendingVideoGridCard(
                                         video = video,
+                                        isAuthorVerified = video.authorVerified || verifiedUserIds.contains(video.userId),
                                         rank = if (normalizedQuery.isBlank() && selectedTag == null && index < 3) index + 1 else null,
                                         onClick = {
                                             recordSearchHistory(query)
@@ -578,6 +581,7 @@ fun SearchScreen(
                             itemsIndexed(trendingVideos, key = { _, v -> v.id }) { index, video ->
                                 TrendingVideoGridCard(
                                     video = video,
+                                    isAuthorVerified = video.authorVerified || verifiedUserIds.contains(video.userId),
                                     rank = if (normalizedQuery.isBlank() && selectedTag == null && index < 3) index + 1 else null,
                                     onClick = {
                                         recordSearchHistory(query)
@@ -653,15 +657,26 @@ private fun CreatorSearchListRow(
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = creator.displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (creator.isVerified) {
+                        Spacer(modifier = Modifier.width(5.dp))
+                        VerifiedTickIcon(size = 16.dp)
+                    }
+                }
                 Text(
-                    text = creator.displayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "@${creator.username} • ${creator.followersCount} takipçi",
+                    text = buildString {
+                        append("@${creator.username}")
+                        if (creator.isVerified) append(" • Admin")
+                        append(" • ${creator.followersCount} takipçi")
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary,
                     maxLines = 1,
@@ -730,14 +745,24 @@ private fun CreatorSearchCardCompact(
                 size = 54.dp
             )
             Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = creator.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (creator.isVerified) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    VerifiedTickIcon(size = 16.dp)
+                }
+            }
             Text(
-                text = creator.displayName,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = "@${creator.username}",
+                text = if (creator.isVerified) "@${creator.username} • Admin" else "@${creator.username}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -780,7 +805,8 @@ private fun CreatorSearchCardCompact(
 private fun TrendingVideoGridCard(
     video: VideoPost,
     rank: Int?,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    isAuthorVerified: Boolean = video.authorVerified
 ) {
     val thumbBitmap = remember(video.thumbnailData) {
         VideoMediaHelper.decodeThumbnail(video.thumbnailData)
@@ -879,14 +905,23 @@ private fun TrendingVideoGridCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "@${video.authorUsername}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.85f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
-                )
+                ) {
+                    Text(
+                        text = "@${video.authorUsername}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.85f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (isAuthorVerified) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        VerifiedTickIcon(size = 13.dp)
+                    }
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)

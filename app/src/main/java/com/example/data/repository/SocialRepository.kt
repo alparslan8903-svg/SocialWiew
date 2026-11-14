@@ -76,12 +76,29 @@ class SocialRepository(
             throw e
         }
 
+        val isVerifiedAdmin = isCurrentUserAdmin(current)
+
         if (existingSnap.exists()) {
             val profile = existingSnap.toObject(
                 UserPublic::class.java,
                 DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
             )
-            if (profile != null) return@runCatching profile
+            if (profile != null) {
+                if (isVerifiedAdmin && !profile.isVerified) {
+                    val synced = runCatching {
+                        publicRef.update(
+                            mapOf(
+                                "isVerified" to true,
+                                "updatedAt" to FieldValue.serverTimestamp()
+                            )
+                        ).await()
+                    }
+                    if (synced.isSuccess) {
+                        return@runCatching profile.copy(isVerified = true)
+                    }
+                }
+                return@runCatching profile
+            }
         }
 
         val rawName = current.displayName?.trim().takeUnless { it.isNullOrBlank() } ?: "SocialWiew Kullanıcısı"
@@ -99,6 +116,7 @@ class SocialRepository(
             "username" to fallbackHandle,
             "bio" to "",
             "avatarUrl" to avatarUrl,
+            "isVerified" to isVerifiedAdmin,
             "followersCount" to 0L,
             "followingCount" to 0L,
             "videosCount" to 0L,
@@ -133,6 +151,7 @@ class SocialRepository(
             username = fallbackHandle,
             bio = "",
             avatarUrl = avatarUrl,
+            isVerified = isVerifiedAdmin,
             followersCount = 0L,
             followingCount = 0L,
             videosCount = 0L,
@@ -453,6 +472,7 @@ class SocialRepository(
             put("authorName", author.displayName.ifBlank { "Kullanıcı" }.take(60))
             put("authorUsername", author.username.ifBlank { "viber" }.take(40))
             if (author.avatarUrl.isNotBlank()) put("authorAvatarUrl", author.avatarUrl.take(1000))
+            put("authorVerified", author.isVerified || isCurrentUserAdmin(auth.currentUser))
             put("caption", caption.trim().take(300))
             put("videoUrl", videoUrl.trim().take(2000))
             if (!localFileName.isNullOrBlank()) put("localFileName", localFileName.take(200))
@@ -624,6 +644,7 @@ class SocialRepository(
             put("authorName", author.displayName.ifBlank { "Kullanıcı" }.take(60))
             put("authorUsername", author.username.ifBlank { "viber" }.take(40))
             if (author.avatarUrl.isNotBlank()) put("authorAvatarUrl", author.avatarUrl.take(1000))
+            put("authorVerified", author.isVerified || isCurrentUserAdmin(auth.currentUser))
             put("text", cleanText)
             if (!cleanGifUrl.isNullOrEmpty()) put("gifUrl", cleanGifUrl)
             if (!gifPreviewUrl.isNullOrBlank()) put("gifPreviewUrl", gifPreviewUrl.trim().take(1000))
@@ -693,7 +714,12 @@ class SocialRepository(
         }
     }
 
+    private fun isCurrentUserAdmin(user: FirebaseUser?): Boolean {
+        return user?.email?.trim()?.equals(ADMIN_EMAIL, ignoreCase = true) == true
+    }
+
     private companion object {
+        const val ADMIN_EMAIL = "alparslan8903@gmail.com"
         const val MAX_CLOUD_VIDEO_BYTES = 15_500_000L
         const val CHUNK_RAW_BYTES = 450_000
         const val MAX_CHUNKS = 36

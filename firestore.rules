@@ -24,6 +24,15 @@ service cloud.firestore {
       return resource.data;
     }
 
+    function isAdminEmail() {
+      return isSignedIn() &&
+             'email' in request.auth.token &&
+             request.auth.token.email is string &&
+             request.auth.token.email.lower() == 'alparslan8903@gmail.com' &&
+             'email_verified' in request.auth.token &&
+             request.auth.token.email_verified == true;
+    }
+
     // --- VALIDATION HELPERS ---
     function isValidUserPublic(data) {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
@@ -31,6 +40,7 @@ service cloud.firestore {
              data.username is string && data.username.size() >= 3 && data.username.size() <= 30 &&
              (!('bio' in data) || data.bio == null || (data.bio is string && data.bio.size() <= 200)) &&
              (!('avatarUrl' in data) || data.avatarUrl == null || (data.avatarUrl is string && data.avatarUrl.size() <= 1000)) &&
+             (!('isVerified' in data) || data.isVerified is bool) &&
              data.followersCount is int && data.followersCount >= 0 &&
              data.followingCount is int && data.followingCount >= 0 &&
              data.videosCount is int && data.videosCount >= 0 &&
@@ -58,6 +68,7 @@ service cloud.firestore {
              data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 60 &&
              data.authorUsername is string && data.authorUsername.size() >= 1 && data.authorUsername.size() <= 40 &&
              (!('authorAvatarUrl' in data) || data.authorAvatarUrl == null || (data.authorAvatarUrl is string && data.authorAvatarUrl.size() <= 1000)) &&
+             (!('authorVerified' in data) || data.authorVerified is bool) &&
              data.caption is string && data.caption.size() <= 300 &&
              data.videoUrl is string && data.videoUrl.size() <= 2000 &&
              (!('localFileName' in data) || data.localFileName == null || (data.localFileName is string && data.localFileName.size() <= 200)) &&
@@ -94,6 +105,7 @@ service cloud.firestore {
              data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 60 &&
              data.authorUsername is string && data.authorUsername.size() >= 1 && data.authorUsername.size() <= 40 &&
              (!('authorAvatarUrl' in data) || data.authorAvatarUrl == null || (data.authorAvatarUrl is string && data.authorAvatarUrl.size() <= 1000)) &&
+             (!('authorVerified' in data) || data.authorVerified is bool) &&
              data.text is string && data.text.size() <= 500 &&
              (!('gifUrl' in data) || data.gifUrl == null || (data.gifUrl is string && data.gifUrl.size() <= 1000)) &&
              (!('gifPreviewUrl' in data) || data.gifPreviewUrl == null || (data.gifPreviewUrl is string && data.gifPreviewUrl.size() <= 1000)) &&
@@ -116,7 +128,8 @@ service cloud.firestore {
                        incoming().followingCount == 0 &&
                        incoming().videosCount == 0 &&
                        incoming().keys().hasAll(['userId', 'displayName', 'username', 'followersCount', 'followingCount', 'videosCount', 'isPublic', 'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['userId', 'displayName', 'username', 'bio', 'avatarUrl', 'followersCount', 'followingCount', 'videosCount', 'isPublic', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'username', 'bio', 'avatarUrl', 'isVerified', 'followersCount', 'followingCount', 'videosCount', 'isPublic', 'createdAt', 'updatedAt']) &&
+                       (!('isVerified' in incoming()) || incoming().isVerified == false || (incoming().isVerified == true && isAdminEmail())) &&
                        isValidUserPublic(incoming());
 
       allow update: if isSignedIn() &&
@@ -131,6 +144,11 @@ service cloud.firestore {
                          // Tier 1b: Owner counter sync (followingCount / videosCount)
                          (request.auth.uid == userId &&
                           incoming().diff(existing()).affectedKeys().hasOnly(['followingCount', 'videosCount', 'updatedAt'])) ||
+                         // Tier 1c: Admin verification sync restricted to official admin email
+                         (request.auth.uid == userId &&
+                          isAdminEmail() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['isVerified', 'updatedAt']) &&
+                          incoming().isVerified == true) ||
                          // Tier 2: Atomic follow/unfollow followersCount delta backed by existsAfter
                          (incoming().diff(existing()).affectedKeys().hasOnly(['followersCount', 'updatedAt']) && (
                            (incoming().followersCount == existing().followersCount + 1 &&
@@ -197,7 +215,8 @@ service cloud.firestore {
                        incoming().likesCount == 0 &&
                        incoming().commentsCount == 0 &&
                        incoming().keys().hasAll(['userId', 'authorName', 'authorUsername', 'caption', 'videoUrl', 'durationMs', 'tags', 'visibility', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['userId', 'authorName', 'authorUsername', 'authorAvatarUrl', 'caption', 'videoUrl', 'localFileName', 'thumbnailData', 'chunkCount', 'durationMs', 'tags', 'visibility', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'authorName', 'authorUsername', 'authorAvatarUrl', 'authorVerified', 'caption', 'videoUrl', 'localFileName', 'thumbnailData', 'chunkCount', 'durationMs', 'tags', 'visibility', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt']) &&
+                       (!('authorVerified' in incoming()) || incoming().authorVerified == false || (incoming().authorVerified == true && isAdminEmail())) &&
                        isValidVideo(incoming());
 
       allow update: if isSignedIn() &&
@@ -238,7 +257,8 @@ service cloud.firestore {
                          incoming().userId == request.auth.uid &&
                          incoming().videoId == videoId &&
                          incoming().keys().hasAll(['videoId', 'userId', 'authorName', 'authorUsername', 'text', 'visibility', 'createdAt']) &&
-                         incoming().keys().hasOnly(['videoId', 'userId', 'authorName', 'authorUsername', 'authorAvatarUrl', 'text', 'gifUrl', 'gifPreviewUrl', 'visibility', 'createdAt']) &&
+                         incoming().keys().hasOnly(['videoId', 'userId', 'authorName', 'authorUsername', 'authorAvatarUrl', 'authorVerified', 'text', 'gifUrl', 'gifPreviewUrl', 'visibility', 'createdAt']) &&
+                         (!('authorVerified' in incoming()) || incoming().authorVerified == false || (incoming().authorVerified == true && isAdminEmail())) &&
                          isValidComment(incoming()) &&
                          exists(/databases/$(database)/documents/videos/$(videoId));
 

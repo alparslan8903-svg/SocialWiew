@@ -25,6 +25,10 @@
           "type": "string",
           "description": "Profile avatar URL."
         },
+        "isVerified": {
+          "type": "boolean",
+          "description": "Verified admin badge status restricted to the official admin email."
+        },
         "followersCount": {
           "type": "integer",
           "description": "Total number of followers."
@@ -131,6 +135,10 @@
         "authorAvatarUrl": {
           "type": "string",
           "description": "Creator avatar URL snapshot."
+        },
+        "authorVerified": {
+          "type": "boolean",
+          "description": "Verified admin badge snapshot for the video creator."
         },
         "caption": {
           "type": "string",
@@ -244,6 +252,10 @@
         "authorAvatarUrl": {
           "type": "string",
           "description": "Author avatar URL."
+        },
+        "authorVerified": {
+          "type": "boolean",
+          "description": "Verified admin badge snapshot for the comment author."
         },
         "text": {
           "type": "string",

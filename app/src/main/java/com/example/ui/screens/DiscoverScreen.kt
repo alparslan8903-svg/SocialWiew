@@ -61,6 +61,8 @@ import com.example.R
 import com.example.data.model.UserPublic
 import com.example.data.model.VideoPost
 import com.example.ui.components.CreatorAvatar
+import com.example.ui.components.VerifiedAdminBadge
+import com.example.ui.components.VerifiedTickIcon
 import com.example.ui.components.VideoMediaHelper
 import com.example.ui.viewmodel.UiState
 
@@ -69,6 +71,7 @@ fun DiscoverScreen(
     creatorsState: UiState<List<UserPublic>>,
     videosState: UiState<List<VideoPost>>,
     currentUserId: String,
+    verifiedUserIds: Set<String> = emptySet(),
     followingIds: Set<String>,
     onToggleFollow: (String) -> Unit,
     onOpenCreatorProfile: (String) -> Unit,
@@ -213,6 +216,7 @@ fun DiscoverScreen(
                         items(videos, key = { it.id }) { video ->
                             VideoGridCard(
                                 video = video,
+                                isAuthorVerified = video.authorVerified || verifiedUserIds.contains(video.userId),
                                 onClick = { onOpenVideoPlayer(video) }
                             )
                         }
@@ -250,14 +254,24 @@ private fun CreatorDiscoveryCard(
                 size = 56.dp
             )
             Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = creator.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (creator.isVerified) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    VerifiedTickIcon(size = 16.dp)
+                }
+            }
             Text(
-                text = creator.displayName,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = "@${creator.username}",
+                text = if (creator.isVerified) "@${creator.username} • Admin" else "@${creator.username}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -311,7 +325,8 @@ private fun CreatorDiscoveryCard(
 fun VideoGridCard(
     video: VideoPost,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isAuthorVerified: Boolean = video.authorVerified
 ) {
     val thumbBitmap = remember(video.thumbnailData) {
         VideoMediaHelper.decodeThumbnail(video.thumbnailData)
@@ -380,14 +395,23 @@ fun VideoGridCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "@${video.authorUsername}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.8f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
-                )
+                ) {
+                    Text(
+                        text = "@${video.authorUsername}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.8f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (isAuthorVerified) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        VerifiedTickIcon(size = 13.dp)
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Filled.Favorite,

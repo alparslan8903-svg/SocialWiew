@@ -98,6 +98,20 @@ class SocialFeedViewModel(
             initialValue = UiState.Loading
         )
 
+    val verifiedUserIds: StateFlow<Set<String>> = creatorsState
+        .map { state ->
+            (state as? UiState.Success)?.data
+                ?.filter { it.isVerified }
+                ?.map { it.userId }
+                ?.toSet()
+                .orEmpty()
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+            initialValue = emptySet()
+        )
+
     val followingIds: StateFlow<Set<String>> = socialRepository.observeFollowingIds(currentUserId)
         .catch { error ->
             unwrapFirestoreOrRethrow(error, "observeFollowingIds")

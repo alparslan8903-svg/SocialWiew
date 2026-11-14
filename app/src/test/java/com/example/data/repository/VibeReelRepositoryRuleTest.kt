@@ -185,6 +185,56 @@ class VibeReelRepositoryRuleTest : FirestoreEmulatorTestBase() {
         }
     }
 
+    @Test
+    fun adminAccount_alparslan_receivesVerifiedBadge_and_regularUserDoesNot() = runBlocking {
+        // Regular user does not get verified badge
+        signInTestUser("normal_${UUID.randomUUID()}@test.com")
+        markCurrentUserEmailVerifiedInEmulator()
+        val normalRepo = SocialRepository(firestore, auth)
+        val normalProfile = withTimeout(DEFAULT_TIMEOUT_MS) {
+            normalRepo.ensureUserProfile(auth.currentUser).getOrThrow()
+        }
+        org.junit.Assert.assertFalse(normalProfile.isVerified)
+
+        // Official admin email receives isVerified + authorVerified on video & comment
+        signInTestUser("alparslan8903@gmail.com")
+        markCurrentUserEmailVerifiedInEmulator()
+        val adminRepo = SocialRepository(firestore, auth)
+        val adminProfile = withTimeout(DEFAULT_TIMEOUT_MS) {
+            adminRepo.ensureUserProfile(auth.currentUser).getOrThrow()
+        }
+        assertTrue(adminProfile.isVerified)
+
+        val adminVideoId = withTimeout(DEFAULT_TIMEOUT_MS) {
+            adminRepo.publishVideo(
+                author = adminProfile,
+                caption = "Admin duyurusu",
+                videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+                localFileName = null,
+                thumbnailData = null,
+                durationMs = 5000L,
+                tags = listOf("duyuru")
+            ).getOrThrow()
+        }
+        val publishedAdminVideo = withTimeout(DEFAULT_TIMEOUT_MS) {
+            adminRepo.getVideoById(adminVideoId)
+        }
+        assertNotNull(publishedAdminVideo)
+        assertTrue(publishedAdminVideo!!.authorVerified)
+
+        val adminCommentId = withTimeout(DEFAULT_TIMEOUT_MS) {
+            adminRepo.addComment(
+                videoId = adminVideoId,
+                author = adminProfile,
+                text = "Hoş geldiniz!"
+            ).getOrThrow()
+        }
+        val comments = withTimeout(FLOW_TIMEOUT_MS) {
+            adminRepo.observeComments(adminVideoId).first { list -> list.any { it.id == adminCommentId } }
+        }
+        assertTrue(comments.first { it.id == adminCommentId }.authorVerified)
+    }
+
     private companion object {
         const val DEFAULT_TIMEOUT_MS = 5000L
         const val FLOW_TIMEOUT_MS = 4000L

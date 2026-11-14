@@ -72,6 +72,8 @@ import com.example.data.model.VideoPost
 import com.example.data.repository.SocialRepository
 import com.example.data.repository.ThemeMode
 import com.example.ui.components.CreatorAvatar
+import com.example.ui.components.VerifiedAdminBadge
+import com.example.ui.components.VerifiedTickIcon
 import com.example.ui.viewmodel.ProfileUiState
 import com.example.ui.viewmodel.ProfileViewModel
 import com.google.firebase.Firebase
@@ -409,17 +411,33 @@ private fun ProfileHeaderSection(
 
     Spacer(modifier = Modifier.height(12.dp))
 
-    Text(
-        text = profile?.displayName ?: "SocialWiew Kullanıcısı",
-        style = MaterialTheme.typography.headlineSmall,
-        color = MaterialTheme.colorScheme.onBackground,
-        textAlign = TextAlign.Center
-    )
+    val isVerifiedAdmin = profile?.isVerified == true
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+        modifier = Modifier.padding(horizontal = 16.dp)
+    ) {
+        Text(
+            text = profile?.displayName ?: "SocialWiew Kullanıcısı",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center
+        )
+        if (isVerifiedAdmin) {
+            Spacer(modifier = Modifier.width(6.dp))
+            VerifiedTickIcon(size = 22.dp)
+        }
+    }
     Text(
         text = "@${profile?.username ?: "kullanici"}",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.secondary
     )
+    if (isVerifiedAdmin) {
+        Spacer(modifier = Modifier.height(8.dp))
+        VerifiedAdminBadge(label = "Admin • Doğrulanmış Hesap")
+    }
 
     Spacer(modifier = Modifier.height(8.dp))
     Text(
