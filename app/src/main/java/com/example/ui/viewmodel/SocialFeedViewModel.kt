@@ -5,13 +5,17 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.BuildConfig
+import com.example.data.model.AppUpdateInfo
 import com.example.data.model.TenorGifItem
 import com.example.data.model.UserPublic
 import com.example.data.model.VideoComment
 import com.example.data.model.VideoPost
+import com.example.data.repository.GitHubUpdateRepository
 import com.example.data.repository.SocialRepository
 import com.example.data.repository.TenorRepository
 import com.example.data.repository.TenorUiState
+import com.example.data.repository.ThemePreferencesRepository
 import com.example.ui.components.VideoMediaHelper
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
@@ -24,6 +28,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -36,11 +42,22 @@ sealed interface UiState<out T> {
     data class Error(val message: String) : UiState<Nothing>
 }
 
+sealed interface GitHubUpdateUiState {
+    data object NoRepoConfigured : GitHubUpdateUiState
+    data object Checking : GitHubUpdateUiState
+    data class UpToDate(val info: AppUpdateInfo) : GitHubUpdateUiState
+    data class UpdateAvailable(val info: AppUpdateInfo) : GitHubUpdateUiState
+    data class Error(val repoSlug: String, val message: String) : GitHubUpdateUiState
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class SocialFeedViewModel(
     private val socialRepository: SocialRepository,
     private val tenorRepository: TenorRepository,
-    val currentUserId: String
+    val currentUserId: String,
+    private val themePreferencesRepository: ThemePreferencesRepository? = null,
+    private val gitHubUpdateRepository: GitHubUpdateRepository = GitHubUpdateRepository(),
+    private val currentAppVersion: String = BuildConfig.VERSION_NAME
 ) : ViewModel() {
 
     private val _toastEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
@@ -55,13 +72,71 @@ class SocialFeedViewModel(
     private val _isPublishing = MutableStateFlow(false)
     val isPublishing: StateFlow<Boolean> = _isPublishing.asStateFlow()
 
+    private val _githubUpdateState = MutableStateFlow<GitHubUpdateUiState>(GitHubUpdateUiState.NoRepoConfigured)
+    val githubUpdateState: StateFlow<GitHubUpdateUiState> = _githubUpdateState.asStateFlow()
+
     private val attemptedBackfillIds = mutableSetOf<String>()
+
+    private val sharedGithubRepo: StateFlow<String> = socialRepository.observeSharedUpdateRepo()
+        .catch { error ->
+            unwrapFirestoreOrRethrow(error, "observeSharedUpdateRepo")
+            emit("")
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+            initialValue = ""
+        )
+
+    private val localGithubRepo: StateFlow<String> = (themePreferencesRepository?.githubRepo ?: flowOf(""))
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+            initialValue = ""
+        )
+
+    val configuredGithubRepo: StateFlow<String> = combine(sharedGithubRepo, localGithubRepo) { shared, local ->
+        shared.ifBlank { local }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        initialValue = ""
+    )
+
+    private val dismissedUpdateTag: StateFlow<String> = (themePreferencesRepository?.dismissedUpdateTag ?: flowOf(""))
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+            initialValue = ""
+        )
+
+    val activeUpdateBanner: StateFlow<AppUpdateInfo?> = combine(_githubUpdateState, dismissedUpdateTag) { state, dismissed ->
+        (state as? GitHubUpdateUiState.UpdateAvailable)
+            ?.info
+            ?.takeIf { it.tagName.isNotBlank() && it.tagName != dismissed }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        initialValue = null
+    )
 
     init {
         viewModelScope.launch {
             socialRepository.ensureUserProfile().onFailure { e ->
                 Log.w(TAG, "Profile bootstrap failed", e)
             }
+        }
+        viewModelScope.launch {
+            configuredGithubRepo
+                .map { it.trim() }
+                .distinctUntilChanged()
+                .collect { repo ->
+                    if (repo.isBlank()) {
+                        _githubUpdateState.value = GitHubUpdateUiState.NoRepoConfigured
+                    } else {
+                        checkForGitHubUpdatesInternal(repo, manual = false)
+                    }
+                }
         }
     }
 
@@ -328,6 +403,86 @@ class SocialFeedViewModel(
                     _toastEvents.tryEmit(error.localizedMessage ?: "Profil güncellenemedi.")
                 }
         }
+    }
+
+    fun setUserVerified(targetUserId: String, verified: Boolean) {
+        viewModelScope.launch {
+            socialRepository.setUserVerified(targetUserId, verified)
+                .onSuccess {
+                    val msg = if (verified) "Mavi tik verildi." else "Mavi tik kaldırıldı."
+                    _toastEvents.tryEmit(msg)
+                }
+                .onFailure { error ->
+                    _toastEvents.tryEmit(error.localizedMessage ?: "Doğrulama güncellenemedi.")
+                }
+        }
+    }
+
+    fun checkForGitHubUpdates(manual: Boolean = true) {
+        val repo = configuredGithubRepo.value.trim()
+        if (repo.isBlank()) {
+            _githubUpdateState.value = GitHubUpdateUiState.NoRepoConfigured
+            if (manual) {
+                _toastEvents.tryEmit("Önce GitHub deposunu bağlayın (ör. kullanici/SocialWiew).")
+            }
+            return
+        }
+        viewModelScope.launch {
+            checkForGitHubUpdatesInternal(repo, manual = manual)
+        }
+    }
+
+    fun configureGitHubRepo(
+        rawInput: String,
+        isAdmin: Boolean,
+        onDone: () -> Unit = {}
+    ) {
+        val slug = GitHubUpdateRepository.parseGitHubRepoSlug(rawInput)
+        if (slug == null) {
+            _toastEvents.tryEmit("Geçerli bir GitHub deposu girin (ör. kullanici/SocialWiew).")
+            return
+        }
+        viewModelScope.launch {
+            themePreferencesRepository?.setGithubRepo(slug)
+            if (isAdmin) {
+                socialRepository.saveSharedUpdateRepo(slug).onFailure { err ->
+                    Log.w(TAG, "Shared GitHub repo save failed", err)
+                }
+            }
+            onDone()
+            checkForGitHubUpdatesInternal(slug, manual = true)
+        }
+    }
+
+    fun dismissUpdateBanner(tagName: String) {
+        viewModelScope.launch {
+            themePreferencesRepository?.setDismissedUpdateTag(tagName)
+        }
+    }
+
+    private suspend fun checkForGitHubUpdatesInternal(repoSlug: String, manual: Boolean) {
+        _githubUpdateState.value = GitHubUpdateUiState.Checking
+        gitHubUpdateRepository.checkForUpdate(repoSlug, currentAppVersion)
+            .onSuccess { info ->
+                if (info.isNewerAvailable) {
+                    _githubUpdateState.value = GitHubUpdateUiState.UpdateAvailable(info)
+                    if (manual) {
+                        _toastEvents.tryEmit("Yeni GitHub güncellemesi bulundu: ${info.tagName}")
+                    }
+                } else {
+                    _githubUpdateState.value = GitHubUpdateUiState.UpToDate(info)
+                    if (manual) {
+                        _toastEvents.tryEmit("Uygulama güncel (GitHub: ${info.tagName}).")
+                    }
+                }
+            }
+            .onFailure { error ->
+                val msg = error.localizedMessage ?: "GitHub güncellemeleri alınamadı."
+                _githubUpdateState.value = GitHubUpdateUiState.Error(repoSlug, msg)
+                if (manual) {
+                    _toastEvents.tryEmit(msg)
+                }
+            }
     }
 
     private fun unwrapFirestoreOrRethrow(error: Throwable, operation: String): Throwable {

@@ -76,12 +76,13 @@ class SocialRepository(
             throw e
         }
 
-        val isVerifiedAdmin = isCurrentUserAdmin(current)
+        val isVerifiedAccount = isCurrentUserAdmin(current)
 
         if (existingSnap.exists()) {
             val profile = existingSnap.toUserPublicWithVerified()
             if (profile != null) {
-                if (isVerifiedAdmin && !profile.isVerified) {
+                val shouldVerify = isVerifiedAccount || isVerifiedUsername(profile.username)
+                if (shouldVerify && !profile.isVerified) {
                     val synced = runCatching {
                         publicRef.update(
                             mapOf(
@@ -94,7 +95,7 @@ class SocialRepository(
                         return@runCatching profile.copy(isVerified = true)
                     }
                 }
-                return@runCatching profile
+                return@runCatching if (shouldVerify) profile.copy(isVerified = true) else profile
             }
         }
 
@@ -106,6 +107,7 @@ class SocialRepository(
             ?.takeIf { it.length >= 3 }
         val fallbackHandle = (emailPrefix ?: "viber_${uid.take(6).lowercase()}").padEnd(3, 'x').take(30)
         val avatarUrl = current.photoUrl?.toString()?.take(1000) ?: ""
+        val initialVerified = isVerifiedAccount || isVerifiedUsername(fallbackHandle)
 
         val publicPayload = mapOf(
             "userId" to uid,
@@ -113,7 +115,7 @@ class SocialRepository(
             "username" to fallbackHandle,
             "bio" to "",
             "avatarUrl" to avatarUrl,
-            "isVerified" to isVerifiedAdmin,
+            "isVerified" to initialVerified,
             "followersCount" to 0L,
             "followingCount" to 0L,
             "videosCount" to 0L,
@@ -148,7 +150,7 @@ class SocialRepository(
             username = fallbackHandle,
             bio = "",
             avatarUrl = avatarUrl,
-            isVerified = isVerifiedAdmin,
+            isVerified = initialVerified,
             followersCount = 0L,
             followingCount = 0L,
             videosCount = 0L,
@@ -166,10 +168,9 @@ class SocialRepository(
                 .whereEqualTo("visibility", "public")
                 .snapshots()
                 .map { snapshot ->
-                    snapshot.toObjects(
-                        VideoPost::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    ).sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                    snapshot.documents
+                        .mapNotNull { it.toVideoPostWithVerified() }
+                        .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
                 }
                 .withFirestoreErrorLogging(OperationType.LIST, path, uid)
         )
@@ -184,10 +185,9 @@ class SocialRepository(
                 .whereEqualTo("userId", userId)
                 .snapshots()
                 .map { snapshot ->
-                    snapshot.toObjects(
-                        VideoPost::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    ).sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                    snapshot.documents
+                        .mapNotNull { it.toVideoPostWithVerified() }
+                        .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
                 }
                 .withFirestoreErrorLogging(OperationType.LIST, path, uid)
         )
@@ -266,10 +266,9 @@ class SocialRepository(
                 .whereEqualTo("visibility", "public")
                 .snapshots()
                 .map { snapshot ->
-                    snapshot.toObjects(
-                        VideoComment::class.java,
-                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    ).sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                    snapshot.documents
+                        .mapNotNull { it.toVideoCommentWithVerified() }
+                        .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
                 }
                 .withFirestoreErrorLogging(OperationType.LIST, path, uid)
         )
@@ -299,6 +298,66 @@ class SocialRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.UPDATE, docRef.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun setUserVerified(
+        targetUserId: String,
+        verified: Boolean
+    ): Result<Unit> = runCatching {
+        requireUserId()
+        require(isCurrentUserAdmin(auth.currentUser)) {
+            "Yalnızca yetkili admin mavi tik verebilir."
+        }
+        val docRef = db.collection("users_public").document(targetUserId)
+        try {
+            docRef.update(
+                mapOf(
+                    "isVerified" to verified,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docRef.path, auth)
+            throw e
+        }
+    }
+
+    fun observeSharedUpdateRepo(): Flow<String> = flow {
+        val uid = requireUserId()
+        val path = "app_config/updates"
+        emitAll(
+            db.collection("app_config").document("updates")
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.getString("githubRepo")?.trim().orEmpty()
+                }
+                .withFirestoreErrorLogging(OperationType.GET, path, uid)
+        )
+    }
+
+    suspend fun saveSharedUpdateRepo(repoSlug: String): Result<Unit> = runCatching {
+        val uid = requireUserId()
+        require(isCurrentUserAdmin(auth.currentUser)) {
+            "Genel güncelleme deposunu yalnızca admin güncelleyebilir."
+        }
+        val cleanRepo = repoSlug.trim().take(160)
+        val docRef = db.collection("app_config").document("updates")
+        try {
+            docRef.set(
+                mapOf(
+                    "githubRepo" to cleanRepo,
+                    "updatedBy" to uid,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docRef.path, auth)
             throw e
         }
     }
@@ -450,7 +509,7 @@ class SocialRepository(
             put("authorName", author.displayName.ifBlank { "Kullanıcı" }.take(60))
             put("authorUsername", author.username.ifBlank { "viber" }.take(40))
             if (author.avatarUrl.isNotBlank()) put("authorAvatarUrl", author.avatarUrl.take(1000))
-            put("authorVerified", author.isVerified || isCurrentUserAdmin(auth.currentUser))
+            put("authorVerified", author.isVerified || isCurrentUserAdmin(auth.currentUser) || isVerifiedUsername(author.username))
             put("caption", caption.trim().take(300))
             put("videoUrl", videoUrl.trim().take(2000))
             if (!localFileName.isNullOrBlank()) put("localFileName", localFileName.take(200))
@@ -724,7 +783,7 @@ class SocialRepository(
             put("authorName", author.displayName.ifBlank { "Kullanıcı" }.take(60))
             put("authorUsername", author.username.ifBlank { "viber" }.take(40))
             if (author.avatarUrl.isNotBlank()) put("authorAvatarUrl", author.avatarUrl.take(1000))
-            put("authorVerified", author.isVerified || isCurrentUserAdmin(auth.currentUser))
+            put("authorVerified", author.isVerified || isCurrentUserAdmin(auth.currentUser) || isVerifiedUsername(author.username))
             put("text", cleanText)
             if (!cleanGifUrl.isNullOrEmpty()) put("gifUrl", cleanGifUrl)
             if (!gifPreviewUrl.isNullOrBlank()) put("gifPreviewUrl", gifPreviewUrl.trim().take(1000))
@@ -782,10 +841,7 @@ class SocialRepository(
     suspend fun getVideoById(videoId: String): VideoPost? {
         val docRef = db.collection("videos").document(videoId)
         return try {
-            docRef.get().await().toObject(
-                VideoPost::class.java,
-                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-            )
+            docRef.get().await().toVideoPostWithVerified()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -799,19 +855,54 @@ class SocialRepository(
             UserPublic::class.java,
             DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
         ) ?: return null
-        val verifiedFlag = getBoolean("isVerified") == true || getBoolean("verified") == true
+        val verifiedFlag = getBoolean("isVerified") == true ||
+            getBoolean("verified") == true ||
+            isVerifiedUsername(base.username)
         return if (base.isVerified == verifiedFlag) base else base.copy(isVerified = verifiedFlag)
+    }
+
+    private fun DocumentSnapshot.toVideoPostWithVerified(): VideoPost? {
+        val base = toObject(
+            VideoPost::class.java,
+            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+        ) ?: return null
+        val verifiedFlag = base.authorVerified ||
+            getBoolean("authorVerified") == true ||
+            isVerifiedUsername(base.authorUsername)
+        return if (base.authorVerified == verifiedFlag) base else base.copy(authorVerified = verifiedFlag)
+    }
+
+    private fun DocumentSnapshot.toVideoCommentWithVerified(): VideoComment? {
+        val base = toObject(
+            VideoComment::class.java,
+            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+        ) ?: return null
+        val verifiedFlag = base.authorVerified ||
+            getBoolean("authorVerified") == true ||
+            isVerifiedUsername(base.authorUsername)
+        return if (base.authorVerified == verifiedFlag) base else base.copy(authorVerified = verifiedFlag)
     }
 
     private fun isCurrentUserAdmin(user: FirebaseUser?): Boolean {
         return user?.email?.trim()?.equals(ADMIN_EMAIL, ignoreCase = true) == true
     }
 
-    private companion object {
+    companion object {
         const val ADMIN_EMAIL = "alparslan8903@gmail.com"
-        const val MAX_CLOUD_VIDEO_BYTES = 15_500_000L
-        const val CHUNK_RAW_BYTES = 450_000
-        const val MAX_CHUNKS = 36
-        const val CHUNKS_PER_BATCH = 6
+        private val VERIFIED_USERNAMES = setOf("eymendogan615")
+
+        fun isAdminUsername(username: String?): Boolean {
+            return username?.trim()?.removePrefix("@")?.equals("alparslan8903", ignoreCase = true) == true
+        }
+
+        fun isVerifiedUsername(username: String?): Boolean {
+            val clean = username?.trim()?.removePrefix("@")?.lowercase().orEmpty()
+            return clean == "alparslan8903" || clean in VERIFIED_USERNAMES
+        }
+
+        private const val MAX_CLOUD_VIDEO_BYTES = 15_500_000L
+        private const val CHUNK_RAW_BYTES = 450_000
+        private const val MAX_CHUNKS = 36
+        private const val CHUNKS_PER_BATCH = 6
     }
 }

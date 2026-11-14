@@ -77,6 +77,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.model.VideoPost
+import com.example.data.repository.SocialRepository
 import com.example.ui.components.CreatorAvatar
 import com.example.ui.components.VerifiedAdminBadge
 import com.example.ui.components.VerifiedTickIcon
@@ -159,7 +160,9 @@ fun FeedScreen(
                             isActive = isActive,
                             isMuted = isMuted,
                             isOwnVideo = video.userId == currentUserId,
-                            isAuthorVerified = video.authorVerified || verifiedUserIds.contains(video.userId),
+                            isAuthorVerified = video.authorVerified ||
+                                verifiedUserIds.contains(video.userId) ||
+                                SocialRepository.isVerifiedUsername(video.authorUsername),
                             isFollowingCreator = followingIds.contains(video.userId),
                             isLiked = likedVideoIds.contains(video.id),
                             onToggleLike = { onToggleLike(video) },
@@ -391,7 +394,8 @@ fun VideoFeedPage(
                                 )
                                 if (isAuthorVerified) {
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    VerifiedAdminBadge(label = "Admin")
+                                    val isAdminAuthor = SocialRepository.isAdminUsername(video.authorUsername)
+                                    VerifiedAdminBadge(label = if (isAdminAuthor) "Admin" else "Doğrulanmış")
                                 }
                             }
                         }

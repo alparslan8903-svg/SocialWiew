@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.model.UserPublic
 import com.example.data.model.VideoPost
+import com.example.data.repository.SocialRepository
 import com.example.ui.components.CreatorAvatar
 import com.example.ui.components.VerifiedTickIcon
 import com.example.ui.components.VideoMediaHelper
@@ -657,6 +658,8 @@ private fun CreatorSearchListRow(
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
+                val isCreatorVerified = creator.isVerified || SocialRepository.isVerifiedUsername(creator.username)
+                val isCreatorAdmin = SocialRepository.isAdminUsername(creator.username)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = creator.displayName,
@@ -666,7 +669,7 @@ private fun CreatorSearchListRow(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (creator.isVerified) {
+                    if (isCreatorVerified) {
                         Spacer(modifier = Modifier.width(5.dp))
                         VerifiedTickIcon(size = 16.dp)
                     }
@@ -674,7 +677,7 @@ private fun CreatorSearchListRow(
                 Text(
                     text = buildString {
                         append("@${creator.username}")
-                        if (creator.isVerified) append(" • Admin")
+                        if (isCreatorAdmin) append(" • Admin")
                         append(" • ${creator.followersCount} takipçi")
                     },
                     style = MaterialTheme.typography.bodySmall,
@@ -745,6 +748,8 @@ private fun CreatorSearchCardCompact(
                 size = 54.dp
             )
             Spacer(modifier = Modifier.height(8.dp))
+            val isCreatorVerified = creator.isVerified || SocialRepository.isVerifiedUsername(creator.username)
+            val isCreatorAdmin = SocialRepository.isAdminUsername(creator.username)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
@@ -756,13 +761,13 @@ private fun CreatorSearchCardCompact(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )
-                if (creator.isVerified) {
+                if (isCreatorVerified) {
                     Spacer(modifier = Modifier.width(4.dp))
                     VerifiedTickIcon(size = 16.dp)
                 }
             }
             Text(
-                text = if (creator.isVerified) "@${creator.username} • Admin" else "@${creator.username}",
+                text = if (isCreatorAdmin) "@${creator.username} • Admin" else "@${creator.username}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -917,7 +922,7 @@ private fun TrendingVideoGridCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (isAuthorVerified) {
+                    if (isAuthorVerified || SocialRepository.isVerifiedUsername(video.authorUsername)) {
                         Spacer(modifier = Modifier.width(4.dp))
                         VerifiedTickIcon(size = 13.dp)
                     }

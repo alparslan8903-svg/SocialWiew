@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.model.UserPublic
 import com.example.data.model.VideoPost
+import com.example.data.repository.SocialRepository
 import com.example.ui.components.CreatorAvatar
 import com.example.ui.components.VerifiedAdminBadge
 import com.example.ui.components.VerifiedTickIcon
@@ -254,6 +255,8 @@ private fun CreatorDiscoveryCard(
                 size = 56.dp
             )
             Spacer(modifier = Modifier.height(10.dp))
+            val isCreatorVerified = creator.isVerified || SocialRepository.isVerifiedUsername(creator.username)
+            val isCreatorAdmin = SocialRepository.isAdminUsername(creator.username)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
@@ -265,13 +268,13 @@ private fun CreatorDiscoveryCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )
-                if (creator.isVerified) {
+                if (isCreatorVerified) {
                     Spacer(modifier = Modifier.width(4.dp))
                     VerifiedTickIcon(size = 16.dp)
                 }
             }
             Text(
-                text = if (creator.isVerified) "@${creator.username} • Admin" else "@${creator.username}",
+                text = if (isCreatorAdmin) "@${creator.username} • Admin" else "@${creator.username}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -407,7 +410,7 @@ fun VideoGridCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (isAuthorVerified) {
+                    if (isAuthorVerified || SocialRepository.isVerifiedUsername(video.authorUsername)) {
                         Spacer(modifier = Modifier.width(4.dp))
                         VerifiedTickIcon(size = 13.dp)
                     }

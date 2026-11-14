@@ -33,6 +33,17 @@ service cloud.firestore {
              request.auth.token.email_verified == true;
     }
 
+    function isVerifiedUsername(username) {
+      return username is string && username.lower() == 'eymendogan615';
+    }
+
+    function isAuthorVerifiedAllowed(username) {
+      return isAdminEmail() ||
+             isVerifiedUsername(username) ||
+             (exists(/databases/$(database)/documents/users_public/$(request.auth.uid)) &&
+              get(/databases/$(database)/documents/users_public/$(request.auth.uid)).data.isVerified == true);
+    }
+
     // --- VALIDATION HELPERS ---
     function isValidUserPublic(data) {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
@@ -114,6 +125,12 @@ service cloud.firestore {
              data.createdAt is timestamp && data.createdAt <= request.time;
     }
 
+    function isValidAppConfig(data) {
+      return data.githubRepo is string && data.githubRepo.size() <= 160 &&
+             (!('updatedBy' in data) || data.updatedBy == null || (data.updatedBy is string && data.updatedBy.size() <= 128)) &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
     // --- COLLECTIONS ---
 
     match /users_public/{userId} {
@@ -129,7 +146,7 @@ service cloud.firestore {
                        incoming().videosCount == 0 &&
                        incoming().keys().hasAll(['userId', 'displayName', 'username', 'followersCount', 'followingCount', 'videosCount', 'isPublic', 'createdAt', 'updatedAt']) &&
                        incoming().keys().hasOnly(['userId', 'displayName', 'username', 'bio', 'avatarUrl', 'isVerified', 'followersCount', 'followingCount', 'videosCount', 'isPublic', 'createdAt', 'updatedAt']) &&
-                       (!('isVerified' in incoming()) || incoming().isVerified == false || (incoming().isVerified == true && isAdminEmail())) &&
+                       (!('isVerified' in incoming()) || incoming().isVerified == false || (incoming().isVerified == true && (isAdminEmail() || isVerifiedUsername(incoming().username)))) &&
                        isValidUserPublic(incoming());
 
       allow update: if isSignedIn() &&
@@ -144,11 +161,13 @@ service cloud.firestore {
                          // Tier 1b: Owner counter sync (followingCount / videosCount)
                          (request.auth.uid == userId &&
                           incoming().diff(existing()).affectedKeys().hasOnly(['followingCount', 'videosCount', 'updatedAt'])) ||
-                         // Tier 1c: Admin verification sync restricted to official admin email
-                         (request.auth.uid == userId &&
-                          isAdminEmail() &&
-                          incoming().diff(existing()).affectedKeys().hasOnly(['isVerified', 'updatedAt']) &&
-                          incoming().isVerified == true) ||
+                         // Tier 1c: Admin verification grant/revoke or verified account self-sync
+                         ((isAdminEmail() &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['isVerified', 'updatedAt'])) ||
+                          (request.auth.uid == userId &&
+                           isVerifiedUsername(existing().username) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['isVerified', 'updatedAt']) &&
+                           incoming().isVerified == true)) ||
                          // Tier 2: Atomic follow/unfollow followersCount delta backed by existsAfter
                          (incoming().diff(existing()).affectedKeys().hasOnly(['followersCount', 'updatedAt']) && (
                            (incoming().followersCount == existing().followersCount + 1 &&
@@ -216,7 +235,7 @@ service cloud.firestore {
                        incoming().commentsCount == 0 &&
                        incoming().keys().hasAll(['userId', 'authorName', 'authorUsername', 'caption', 'videoUrl', 'durationMs', 'tags', 'visibility', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt']) &&
                        incoming().keys().hasOnly(['userId', 'authorName', 'authorUsername', 'authorAvatarUrl', 'authorVerified', 'caption', 'videoUrl', 'localFileName', 'thumbnailData', 'chunkCount', 'durationMs', 'tags', 'visibility', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt']) &&
-                       (!('authorVerified' in incoming()) || incoming().authorVerified == false || (incoming().authorVerified == true && isAdminEmail())) &&
+                       (!('authorVerified' in incoming()) || incoming().authorVerified == false || (incoming().authorVerified == true && isAuthorVerifiedAllowed(incoming().authorUsername))) &&
                        isValidVideo(incoming());
 
       allow update: if isSignedIn() &&
@@ -263,7 +282,7 @@ service cloud.firestore {
                          incoming().videoId == videoId &&
                          incoming().keys().hasAll(['videoId', 'userId', 'authorName', 'authorUsername', 'text', 'visibility', 'createdAt']) &&
                          incoming().keys().hasOnly(['videoId', 'userId', 'authorName', 'authorUsername', 'authorAvatarUrl', 'authorVerified', 'text', 'gifUrl', 'gifPreviewUrl', 'visibility', 'createdAt']) &&
-                         (!('authorVerified' in incoming()) || incoming().authorVerified == false || (incoming().authorVerified == true && isAdminEmail())) &&
+                         (!('authorVerified' in incoming()) || incoming().authorVerified == false || (incoming().authorVerified == true && isAuthorVerifiedAllowed(incoming().authorUsername))) &&
                          isValidComment(incoming()) &&
                          exists(/databases/$(database)/documents/videos/$(videoId));
 
@@ -311,6 +330,19 @@ service cloud.firestore {
       allow update: if false;
 
       allow delete: if isSignedIn() && isValidId(likeId) && existing().userId == request.auth.uid;
+    }
+
+    match /app_config/{docId} {
+      allow get: if isSignedIn() && docId == 'updates';
+      allow list: if false;
+
+      allow create, update: if isAdminEmail() &&
+                               docId == 'updates' &&
+                               incoming().keys().hasAll(['githubRepo', 'updatedAt']) &&
+                               incoming().keys().hasOnly(['githubRepo', 'updatedBy', 'updatedAt']) &&
+                               isValidAppConfig(incoming());
+
+      allow delete: if false;
     }
   }
 }

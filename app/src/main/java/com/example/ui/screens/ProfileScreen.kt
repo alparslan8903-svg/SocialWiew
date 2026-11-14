@@ -67,14 +67,24 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.ui.platform.LocalContext
+import com.example.BuildConfig
 import com.example.R
+import com.example.data.model.AppUpdateInfo
 import com.example.data.model.UserPublic
 import com.example.data.model.VideoPost
 import com.example.data.repository.SocialRepository
 import com.example.data.repository.ThemeMode
 import com.example.ui.components.CreatorAvatar
+import com.example.ui.components.GitHubRepoConfigDialog
+import com.example.ui.components.GitHubUpdateNewsDialog
 import com.example.ui.components.VerifiedAdminBadge
 import com.example.ui.components.VerifiedTickIcon
+import com.example.ui.viewmodel.GitHubUpdateUiState
 import com.example.ui.viewmodel.ProfileUiState
 import com.example.ui.viewmodel.ProfileViewModel
 import com.google.firebase.Firebase
@@ -93,6 +103,11 @@ fun ProfileScreen(
     onDeleteVideo: (String) -> Unit,
     onOpenVideoPlayer: (VideoPost) -> Unit,
     onSignOut: () -> Unit,
+    githubUpdateState: GitHubUpdateUiState = GitHubUpdateUiState.NoRepoConfigured,
+    configuredGithubRepo: String = "",
+    onCheckForUpdates: () -> Unit = {},
+    onConfigureGithubRepo: (rawInput: String, isAdmin: Boolean, onDone: () -> Unit) -> Unit = { _, _, onDone -> onDone() },
+    onToggleVerified: ((Boolean) -> Unit)? = null,
     onNavigateBack: (() -> Unit)? = null
 ) {
     val profileViewModel: ProfileViewModel = viewModel(
@@ -159,6 +174,11 @@ fun ProfileScreen(
                 onDeleteVideo = onDeleteVideo,
                 onOpenVideoPlayer = onOpenVideoPlayer,
                 onSignOut = onSignOut,
+                githubUpdateState = githubUpdateState,
+                configuredGithubRepo = configuredGithubRepo,
+                onCheckForUpdates = onCheckForUpdates,
+                onConfigureGithubRepo = onConfigureGithubRepo,
+                onToggleVerified = onToggleVerified,
                 onNavigateBack = onNavigateBack
             )
         }
@@ -178,9 +198,20 @@ fun ProfileContent(
     onDeleteVideo: (String) -> Unit,
     onOpenVideoPlayer: (VideoPost) -> Unit,
     onSignOut: () -> Unit,
+    githubUpdateState: GitHubUpdateUiState = GitHubUpdateUiState.NoRepoConfigured,
+    configuredGithubRepo: String = "",
+    onCheckForUpdates: () -> Unit = {},
+    onConfigureGithubRepo: (rawInput: String, isAdmin: Boolean, onDone: () -> Unit) -> Unit = { _, _, onDone -> onDone() },
+    onToggleVerified: ((Boolean) -> Unit)? = null,
     onNavigateBack: (() -> Unit)? = null
 ) {
     var showEditDialog by remember { mutableStateOf(false) }
+    var showGitHubRepoDialog by remember { mutableStateOf(false) }
+    var activeUpdateDialogInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
+    val context = LocalContext.current
+    val viewerIsAdmin = remember {
+        Firebase.auth.currentUser?.email?.trim()?.equals(SocialRepository.ADMIN_EMAIL, ignoreCase = true) == true
+    }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -224,6 +255,12 @@ fun ProfileContent(
                             onToggleFollow = onToggleFollow,
                             onEditProfile = { showEditDialog = true },
                             onSignOut = onSignOut,
+                            githubUpdateState = githubUpdateState,
+                            configuredGithubRepo = configuredGithubRepo,
+                            onCheckForUpdates = onCheckForUpdates,
+                            onOpenRepoConfig = { showGitHubRepoDialog = true },
+                            onOpenUpdateDetails = { info -> activeUpdateDialogInfo = info },
+                            onToggleVerified = onToggleVerified,
                             onNavigateBack = onNavigateBack
                         )
                     }
@@ -301,6 +338,12 @@ fun ProfileContent(
                                 onToggleFollow = onToggleFollow,
                                 onEditProfile = { showEditDialog = true },
                                 onSignOut = onSignOut,
+                                githubUpdateState = githubUpdateState,
+                                configuredGithubRepo = configuredGithubRepo,
+                                onCheckForUpdates = onCheckForUpdates,
+                                onOpenRepoConfig = { showGitHubRepoDialog = true },
+                                onOpenUpdateDetails = { info -> activeUpdateDialogInfo = info },
+                                onToggleVerified = onToggleVerified,
                                 onNavigateBack = onNavigateBack
                             )
 
@@ -352,6 +395,31 @@ fun ProfileContent(
             }
         )
     }
+
+    if (showGitHubRepoDialog) {
+        GitHubRepoConfigDialog(
+            initialRepo = configuredGithubRepo,
+            isAdmin = viewerIsAdmin,
+            onDismiss = { showGitHubRepoDialog = false },
+            onSave = { rawInput ->
+                onConfigureGithubRepo(rawInput, viewerIsAdmin) {
+                    showGitHubRepoDialog = false
+                }
+            }
+        )
+    }
+
+    activeUpdateDialogInfo?.let { info ->
+        GitHubUpdateNewsDialog(
+            updateInfo = info,
+            onOpenGitHub = { url ->
+                runCatching {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                }
+            },
+            onDismiss = { activeUpdateDialogInfo = null }
+        )
+    }
 }
 
 @Composable
@@ -365,6 +433,12 @@ private fun ProfileHeaderSection(
     onToggleFollow: () -> Unit,
     onEditProfile: () -> Unit,
     onSignOut: () -> Unit,
+    githubUpdateState: GitHubUpdateUiState,
+    configuredGithubRepo: String,
+    onCheckForUpdates: () -> Unit,
+    onOpenRepoConfig: () -> Unit,
+    onOpenUpdateDetails: (AppUpdateInfo) -> Unit,
+    onToggleVerified: ((Boolean) -> Unit)?,
     onNavigateBack: (() -> Unit)?
 ) {
     Row(
@@ -403,10 +477,15 @@ private fun ProfileHeaderSection(
 
     Spacer(modifier = Modifier.height(12.dp))
 
-    val isAdminOwnerEmail = remember(isOwnProfile) {
-        isOwnProfile && Firebase.auth.currentUser?.email?.trim()?.equals("alparslan8903@gmail.com", ignoreCase = true) == true
+    val viewerIsAdmin = remember {
+        Firebase.auth.currentUser?.email?.trim()?.equals(SocialRepository.ADMIN_EMAIL, ignoreCase = true) == true
     }
-    val isVerifiedAdmin = profile?.isVerified == true || isAdminOwnerEmail
+    val isAdminUser = remember(isOwnProfile, profile?.username) {
+        (isOwnProfile && viewerIsAdmin) || SocialRepository.isAdminUsername(profile?.username)
+    }
+    val isVerifiedUser = profile?.isVerified == true ||
+        isAdminUser ||
+        SocialRepository.isVerifiedUsername(profile?.username)
 
     Box(contentAlignment = Alignment.BottomEnd) {
         CreatorAvatar(
@@ -415,7 +494,7 @@ private fun ProfileHeaderSection(
             size = 86.dp,
             modifier = Modifier.testTag("profile_avatar")
         )
-        if (isVerifiedAdmin) {
+        if (isVerifiedUser) {
             Surface(
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.background,
@@ -443,7 +522,7 @@ private fun ProfileHeaderSection(
             color = MaterialTheme.colorScheme.onBackground,
             textAlign = TextAlign.Center
         )
-        if (isVerifiedAdmin) {
+        if (isVerifiedUser) {
             Spacer(modifier = Modifier.width(6.dp))
             VerifiedTickIcon(size = 22.dp)
         }
@@ -453,9 +532,11 @@ private fun ProfileHeaderSection(
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.secondary
     )
-    if (isVerifiedAdmin) {
+    if (isVerifiedUser) {
         Spacer(modifier = Modifier.height(8.dp))
-        VerifiedAdminBadge(label = "Admin • Doğrulanmış Hesap")
+        VerifiedAdminBadge(
+            label = if (isAdminUser) "Admin • Doğrulanmış Hesap" else "Doğrulanmış Hesap"
+        )
     }
 
     Spacer(modifier = Modifier.height(8.dp))
@@ -563,6 +644,16 @@ private fun ProfileHeaderSection(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        GitHubUpdatesProfileCard(
+            githubUpdateState = githubUpdateState,
+            configuredGithubRepo = configuredGithubRepo,
+            onCheckForUpdates = onCheckForUpdates,
+            onOpenRepoConfig = onOpenRepoConfig,
+            onOpenUpdateDetails = onOpenUpdateDetails
+        )
     } else {
         Button(
             onClick = onToggleFollow,
@@ -583,6 +674,22 @@ private fun ProfileHeaderSection(
                 else stringResource(id = R.string.follow),
                 style = MaterialTheme.typography.titleMedium
             )
+        }
+        if (viewerIsAdmin && onToggleVerified != null && !isAdminUser) {
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = { onToggleVerified(!isVerifiedUser) },
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("admin_toggle_verified_button")
+            ) {
+                Text(
+                    text = if (isVerifiedUser) "Mavi Tiki Kaldır" else "Mavi Tik Ver",
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
         }
     }
 }
@@ -711,3 +818,141 @@ private fun EditProfileDialog(
         }
     )
 }
+
+@Composable
+private fun GitHubUpdatesProfileCard(
+    githubUpdateState: GitHubUpdateUiState,
+    configuredGithubRepo: String,
+    onCheckForUpdates: () -> Unit,
+    onOpenRepoConfig: () -> Unit,
+    onOpenUpdateDetails: (AppUpdateInfo) -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+        shape = RoundedCornerShape(18.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("github_updates_card")
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.SystemUpdate,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "GitHub Güncellemeleri",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Text(
+                    text = "v${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            val statusText = when (githubUpdateState) {
+                is GitHubUpdateUiState.NoRepoConfigured ->
+                    "Henüz GitHub deposu tanımlanmadı. Depo bağlayarak otomatik güncelleme haberi alabilirsiniz."
+                is GitHubUpdateUiState.Checking ->
+                    "GitHub (${configuredGithubRepo.ifBlank { "..." }}) kontrol ediliyor..."
+                is GitHubUpdateUiState.UpdateAvailable ->
+                    "Yeni güncelleme mevcut: ${githubUpdateState.info.tagName} • ${githubUpdateState.info.title}"
+                is GitHubUpdateUiState.UpToDate ->
+                    "Uygulamanız güncel (GitHub: ${githubUpdateState.info.tagName} • ${githubUpdateState.info.repoSlug})"
+                is GitHubUpdateUiState.Error ->
+                    "Kontrol hatası (${githubUpdateState.repoSlug}): ${githubUpdateState.message}"
+            }
+
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (githubUpdateState is GitHubUpdateUiState.UpdateAvailable) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onOpenRepoConfig,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("github_repo_config_button")
+                ) {
+                    Text(
+                        text = if (configuredGithubRepo.isBlank()) "Depo Bağla" else "Depoyu Değiştir",
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1
+                    )
+                }
+
+                when (githubUpdateState) {
+                    is GitHubUpdateUiState.UpdateAvailable -> {
+                        Button(
+                            onClick = { onOpenUpdateDetails(githubUpdateState.info) },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("github_view_update_button")
+                        ) {
+                            Text(
+                                text = "Güncelleme Haberi",
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                    is GitHubUpdateUiState.UpToDate -> {
+                        OutlinedButton(
+                            onClick = { onOpenUpdateDetails(githubUpdateState.info) },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = "Sürüm Notları",
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                    else -> Unit
+                }
+
+                IconButton(
+                    onClick = onCheckForUpdates,
+                    enabled = githubUpdateState !is GitHubUpdateUiState.Checking,
+                    modifier = Modifier.testTag("github_check_updates_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = "Güncellemeleri Kontrol Et"
+                    )
+                }
+            }
+        }
+    }
+}
+

@@ -290,6 +290,64 @@ class VibeReelRepositoryRuleTest : FirestoreEmulatorTestBase() {
         }
     }
 
+    @Test
+    fun verifiedUsername_eymendogan615_and_adminSetUserVerified_succeed() = runBlocking {
+        // Regular user starts unverified
+        signInTestUser("normal_verify_${UUID.randomUUID()}@test.com")
+        markCurrentUserEmailVerifiedInEmulator()
+        val normalUid = auth.currentUser!!.uid
+        val normalRepo = SocialRepository(firestore, auth)
+        val normalProfile = withTimeout(DEFAULT_TIMEOUT_MS) {
+            normalRepo.ensureUserProfile(auth.currentUser).getOrThrow()
+        }
+        org.junit.Assert.assertFalse(normalProfile.isVerified)
+
+        // @eymendogan615 automatically receives blue tick on profile, video & comment
+        signInTestUser("eymendogan615@test.com")
+        markCurrentUserEmailVerifiedInEmulator()
+        val eymenUid = auth.currentUser!!.uid
+        val eymenRepo = SocialRepository(firestore, auth)
+        val eymenProfile = withTimeout(DEFAULT_TIMEOUT_MS) {
+            eymenRepo.ensureUserProfile(auth.currentUser).getOrThrow()
+        }
+        assertEquals("eymendogan615", eymenProfile.username)
+        assertTrue("@eymendogan615 must receive isVerified=true", eymenProfile.isVerified)
+
+        val observedEymen = withTimeout(FLOW_TIMEOUT_MS) {
+            eymenRepo.observeUserProfile(eymenUid).first { it != null }
+        }
+        assertTrue(observedEymen!!.isVerified)
+
+        val eymenVideoId = withTimeout(DEFAULT_TIMEOUT_MS) {
+            eymenRepo.publishVideo(
+                author = eymenProfile,
+                caption = "Eymen video",
+                videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+                localFileName = null,
+                thumbnailData = null,
+                durationMs = 3000L,
+                tags = listOf("vlog")
+            ).getOrThrow()
+        }
+        val publishedEymenVideo = withTimeout(DEFAULT_TIMEOUT_MS) {
+            eymenRepo.getVideoById(eymenVideoId)
+        }
+        assertTrue(publishedEymenVideo!!.authorVerified)
+
+        // Admin grants blue tick to normal user via setUserVerified
+        signInTestUser("alparslan8903@gmail.com")
+        markCurrentUserEmailVerifiedInEmulator()
+        val adminRepo = SocialRepository(firestore, auth)
+        withTimeout(DEFAULT_TIMEOUT_MS) {
+            adminRepo.ensureUserProfile(auth.currentUser).getOrThrow()
+            adminRepo.setUserVerified(normalUid, true).getOrThrow()
+        }
+        val promotedNormal = withTimeout(FLOW_TIMEOUT_MS) {
+            adminRepo.observeUserProfile(normalUid).first { it?.isVerified == true }
+        }
+        assertTrue(promotedNormal!!.isVerified)
+    }
+
     private companion object {
         const val DEFAULT_TIMEOUT_MS = 5000L
         const val FLOW_TIMEOUT_MS = 4000L

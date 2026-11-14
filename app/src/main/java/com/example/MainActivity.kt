@@ -82,6 +82,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import android.content.Intent
+import android.net.Uri
+import com.example.data.model.AppUpdateInfo
 import com.example.data.model.VideoPost
 import com.example.data.repository.SocialRepository
 import com.example.data.repository.TenorRepository
@@ -91,6 +94,8 @@ import com.example.ui.auth.AuthScreen
 import com.example.ui.auth.authStateFlow
 import com.example.ui.auth.signOutUser
 import com.example.ui.components.CommentsBottomSheet
+import com.example.ui.components.GitHubUpdateNewsBanner
+import com.example.ui.components.GitHubUpdateNewsDialog
 import com.example.ui.screens.DiscoverScreen
 import com.example.ui.screens.FeedScreen
 import com.example.ui.screens.ProfileScreen
@@ -191,6 +196,8 @@ fun MainSocialScaffold(
     val coroutineScope = rememberCoroutineScope()
     val credentialManager = remember(context) { CredentialManager.create(context) }
 
+    val themeRepo = remember(context) { ThemePreferencesRepository(context.applicationContext) }
+
     val viewModel: SocialFeedViewModel = viewModel(
         key = currentUserId,
         factory = viewModelFactory {
@@ -201,7 +208,8 @@ fun MainSocialScaffold(
                 SocialFeedViewModel(
                     socialRepository = SocialRepository(db, Firebase.auth),
                     tenorRepository = TenorRepository(),
-                    currentUserId = currentUserId
+                    currentUserId = currentUserId,
+                    themePreferencesRepository = themeRepo
                 )
             }
         }
@@ -216,6 +224,10 @@ fun MainSocialScaffold(
     val commentsState by viewModel.activeCommentsState.collectAsStateWithLifecycle()
     val tenorState by viewModel.tenorState.collectAsStateWithLifecycle()
     val isPublishing by viewModel.isPublishing.collectAsStateWithLifecycle()
+    val githubUpdateState by viewModel.githubUpdateState.collectAsStateWithLifecycle()
+    val configuredGithubRepo by viewModel.configuredGithubRepo.collectAsStateWithLifecycle()
+    val activeUpdateBanner by viewModel.activeUpdateBanner.collectAsStateWithLifecycle()
+    var updateNewsDialogInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(viewModel) {
@@ -436,7 +448,11 @@ fun MainSocialScaffold(
                             onOpenVideoPlayer = { video -> fullScreenVideo = video },
                             onSignOut = {
                                 signOutUser(credentialManager, coroutineScope)
-                            }
+                            },
+                            githubUpdateState = githubUpdateState,
+                            configuredGithubRepo = configuredGithubRepo,
+                            onCheckForUpdates = { viewModel.checkForGitHubUpdates(manual = true) },
+                            onConfigureGithubRepo = viewModel::configureGitHubRepo
                         )
                     }
 
@@ -458,11 +474,38 @@ fun MainSocialScaffold(
                             onSignOut = {
                                 signOutUser(credentialManager, coroutineScope)
                             },
+                            onToggleVerified = { verified ->
+                                viewModel.setUserVerified(targetUserId, verified)
+                            },
                             onNavigateBack = { navController.popBackStack() }
                         )
                     }
                 }
             }
+        }
+
+        GitHubUpdateNewsBanner(
+            updateInfo = if (fullScreenVideo == null) activeUpdateBanner else null,
+            onOpenDetails = { updateNewsDialogInfo = activeUpdateBanner },
+            onDismiss = {
+                activeUpdateBanner?.let { viewModel.dismissUpdateBanner(it.tagName) }
+            },
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 68.dp)
+        )
+
+        updateNewsDialogInfo?.let { info ->
+            GitHubUpdateNewsDialog(
+                updateInfo = info,
+                onOpenGitHub = { url ->
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    }
+                },
+                onDismiss = { updateNewsDialogInfo = null }
+            )
         }
 
         // Full-Screen Video Modal when opened from Discover, Search, or Profile grids
@@ -480,7 +523,9 @@ fun MainSocialScaffold(
                     isActive = selectedVideoForComments == null,
                     isMuted = false,
                     isOwnVideo = liveVideo.userId == currentUserId,
-                    isAuthorVerified = liveVideo.authorVerified || verifiedUserIds.contains(liveVideo.userId),
+                    isAuthorVerified = liveVideo.authorVerified ||
+                        verifiedUserIds.contains(liveVideo.userId) ||
+                        com.example.data.repository.SocialRepository.isVerifiedUsername(liveVideo.authorUsername),
                     isFollowingCreator = followingIds.contains(liveVideo.userId),
                     isLiked = likedVideoIds.contains(liveVideo.id),
                     onToggleLike = { viewModel.toggleLike(liveVideo) },

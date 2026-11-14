@@ -470,6 +470,89 @@ test("Admin verification: alparslan8903@gmail.com can claim verified badge while
       updatedAt: ts,
     })
   );
+
+  // @eymendogan615 receives verified badge and can publish authorVerified = true
+  const eymenUid = "user_eymendogan615";
+  const eymenDb = testEnv.authenticatedContext(eymenUid, {
+    email: "eymen@example.com",
+    email_verified: true,
+  }).firestore();
+  await assertSucceeds(
+    eymenDb.collection("users_public").doc(eymenUid).set({
+      userId: eymenUid,
+      displayName: "Eymen Doğan",
+      username: "eymendogan615",
+      isVerified: true,
+      followersCount: 0,
+      followingCount: 0,
+      videosCount: 0,
+      isPublic: true,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+  await assertSucceeds(
+    eymenDb.collection("videos").doc("eymen_vid").set({
+      userId: eymenUid,
+      authorName: "Eymen Doğan",
+      authorUsername: "eymendogan615",
+      authorVerified: true,
+      caption: "Eymen video",
+      videoUrl: "https://example.com/e.mp4",
+      durationMs: 4000,
+      tags: ["vlog"],
+      visibility: "public",
+      likesCount: 0,
+      commentsCount: 0,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Admin can grant isVerified to a regular user, while non-admin cannot
+  await assertSucceeds(
+    aliceDb.collection("users_public").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      displayName: "Alice",
+      username: "alice_vibes",
+      isVerified: false,
+      followersCount: 0,
+      followingCount: 0,
+      videosCount: 0,
+      isPublic: true,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+  await assertFails(
+    eymenDb.collection("users_public").doc(ALICE_UID).update({
+      isVerified: true,
+      updatedAt: pastTs(),
+    })
+  );
+  await assertSucceeds(
+    adminDb.collection("users_public").doc(ALICE_UID).update({
+      isVerified: true,
+      updatedAt: pastTs(),
+    })
+  );
+
+  // app_config/updates: admin can configure GitHub repo, signed-in user can read but cannot write
+  await assertFails(
+    aliceDb.collection("app_config").doc("updates").set({
+      githubRepo: "evil/repo",
+      updatedBy: ALICE_UID,
+      updatedAt: pastTs(),
+    })
+  );
+  await assertSucceeds(
+    adminDb.collection("app_config").doc("updates").set({
+      githubRepo: "alparslan8903/SocialWiew",
+      updatedBy: adminUid,
+      updatedAt: pastTs(),
+    })
+  );
+  await assertSucceeds(
+    aliceDb.collection("app_config").doc("updates").get()
+  );
 });
-
-

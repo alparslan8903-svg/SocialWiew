@@ -592,7 +592,7 @@ fun VerifiedTickIcon(
 ) {
     Icon(
         imageVector = Icons.Filled.Verified,
-        contentDescription = "Doğrulanmış Admin Hesabı",
+        contentDescription = "Doğrulanmış Hesap",
         tint = VerifiedBlue,
         modifier = modifier
             .size(size)

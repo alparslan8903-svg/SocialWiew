@@ -74,6 +74,7 @@ import com.example.R
 import com.example.data.model.TenorGifItem
 import com.example.data.model.VideoComment
 import com.example.data.model.VideoPost
+import com.example.data.repository.SocialRepository
 import com.example.data.repository.TenorUiState
 import com.example.ui.viewmodel.UiState
 import kotlinx.coroutines.delay
@@ -205,7 +206,9 @@ fun CommentsBottomSheet(
                                     CommentItemRow(
                                         comment = comment,
                                         isOwner = comment.userId == currentUserId,
-                                        isAuthorVerified = comment.authorVerified || verifiedUserIds.contains(comment.userId),
+                                        isAuthorVerified = comment.authorVerified ||
+                                            verifiedUserIds.contains(comment.userId) ||
+                                            SocialRepository.isVerifiedUsername(comment.authorUsername),
                                         gifImageLoader = gifImageLoader,
                                         onDelete = { onDeleteComment(comment.id) }
                                     )
