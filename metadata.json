@@ -1,0 +1,6 @@
+{
+  "name": "SocialWiew",
+  "description": "SocialWiew: A modern dark-mode video social media app with video sharing, creator following, likes, and Tenor GIF comments.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

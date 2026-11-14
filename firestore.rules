@@ -1,0 +1,259 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default deny everything
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HELPERS ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- VALIDATION HELPERS ---
+    function isValidUserPublic(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50 &&
+             data.username is string && data.username.size() >= 3 && data.username.size() <= 30 &&
+             (!('bio' in data) || data.bio == null || (data.bio is string && data.bio.size() <= 200)) &&
+             (!('avatarUrl' in data) || data.avatarUrl == null || (data.avatarUrl is string && data.avatarUrl.size() <= 1000)) &&
+             data.followersCount is int && data.followersCount >= 0 &&
+             data.followingCount is int && data.followingCount >= 0 &&
+             data.videosCount is int && data.videosCount >= 0 &&
+             data.isPublic is bool && data.isPublic == true &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidUserPrivate(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 200)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidFollow(data) {
+      return data.followerId is string && data.followerId.size() >= 1 && data.followerId.size() <= 128 &&
+             data.followingId is string && data.followingId.size() >= 1 && data.followingId.size() <= 128 &&
+             data.followerId != data.followingId &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidVideo(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 60 &&
+             data.authorUsername is string && data.authorUsername.size() >= 1 && data.authorUsername.size() <= 40 &&
+             (!('authorAvatarUrl' in data) || data.authorAvatarUrl == null || (data.authorAvatarUrl is string && data.authorAvatarUrl.size() <= 1000)) &&
+             data.caption is string && data.caption.size() <= 300 &&
+             data.videoUrl is string && data.videoUrl.size() <= 2000 &&
+             (!('localFileName' in data) || data.localFileName == null || (data.localFileName is string && data.localFileName.size() <= 200)) &&
+             (!('thumbnailData' in data) || data.thumbnailData == null || (data.thumbnailData is string && data.thumbnailData.size() <= 150000)) &&
+             (data.videoUrl.size() > 0 || ('localFileName' in data && data.localFileName is string && data.localFileName.size() > 0)) &&
+             data.durationMs is int && data.durationMs >= 0 &&
+             data.tags is list && data.tags.size() <= 5 && (data.tags.size() == 0 || data.tags[0] is string) &&
+             data.visibility == 'public' &&
+             data.likesCount is int && data.likesCount >= 0 &&
+             data.commentsCount is int && data.commentsCount >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidVideoLike(data) {
+      return data.videoId is string && data.videoId.size() >= 1 && data.videoId.size() <= 128 &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidComment(data) {
+      return data.videoId is string && data.videoId.size() >= 1 && data.videoId.size() <= 128 &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 60 &&
+             data.authorUsername is string && data.authorUsername.size() >= 1 && data.authorUsername.size() <= 40 &&
+             (!('authorAvatarUrl' in data) || data.authorAvatarUrl == null || (data.authorAvatarUrl is string && data.authorAvatarUrl.size() <= 1000)) &&
+             data.text is string && data.text.size() <= 500 &&
+             (!('gifUrl' in data) || data.gifUrl == null || (data.gifUrl is string && data.gifUrl.size() <= 1000)) &&
+             (!('gifPreviewUrl' in data) || data.gifPreviewUrl == null || (data.gifPreviewUrl is string && data.gifPreviewUrl.size() <= 1000)) &&
+             (data.text.size() > 0 || ('gifUrl' in data && data.gifUrl is string && data.gifUrl.size() > 0)) &&
+             data.visibility == 'public' &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    // --- COLLECTIONS ---
+
+    match /users_public/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (existing().isPublic == true || request.auth.uid == userId);
+      allow list: if isSignedIn() && existing().isPublic == true;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().followersCount == 0 &&
+                       incoming().followingCount == 0 &&
+                       incoming().videosCount == 0 &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'username', 'followersCount', 'followingCount', 'videosCount', 'isPublic', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'username', 'bio', 'avatarUrl', 'followersCount', 'followingCount', 'videosCount', 'isPublic', 'createdAt', 'updatedAt']) &&
+                       isValidUserPublic(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidUserPublic(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().isPublic == existing().isPublic && (
+                         // Tier 1: Owner profile edit
+                         (request.auth.uid == userId &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'username', 'bio', 'avatarUrl', 'updatedAt'])) ||
+                         // Tier 1b: Owner counter sync (followingCount / videosCount)
+                         (request.auth.uid == userId &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['followingCount', 'videosCount', 'updatedAt'])) ||
+                         // Tier 2: Atomic follow/unfollow followersCount delta backed by existsAfter
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['followersCount', 'updatedAt']) && (
+                           (incoming().followersCount == existing().followersCount + 1 &&
+                            !exists(/databases/$(database)/documents/follows/$(request.auth.uid + '_' + userId)) &&
+                            existsAfter(/databases/$(database)/documents/follows/$(request.auth.uid + '_' + userId))) ||
+                           (incoming().followersCount == existing().followersCount - 1 &&
+                            incoming().followersCount >= 0 &&
+                            exists(/databases/$(database)/documents/follows/$(request.auth.uid + '_' + userId)) &&
+                            !existsAfter(/databases/$(database)/documents/follows/$(request.auth.uid + '_' + userId)))
+                         ))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+    }
+
+    match /users_private/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'email', 'createdAt', 'updatedAt']) &&
+                       isValidUserPrivate(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidUserPrivate(incoming()) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+    }
+
+    match /follows/{followId} {
+      allow get: if isSignedIn() && isValidId(followId) && (existing().followerId == request.auth.uid || existing().followingId == request.auth.uid);
+      allow list: if isSignedIn() && (existing().followerId == request.auth.uid || existing().followingId == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(followId) &&
+                       incoming().followerId == request.auth.uid &&
+                       followId == (request.auth.uid + '_' + incoming().followingId) &&
+                       incoming().keys().hasAll(['followerId', 'followingId', 'createdAt']) &&
+                       incoming().keys().hasOnly(['followerId', 'followingId', 'createdAt']) &&
+                       isValidFollow(incoming()) &&
+                       exists(/databases/$(database)/documents/users_public/$(incoming().followingId));
+
+      allow update: if false;
+
+      allow delete: if isSignedIn() && isValidId(followId) && existing().followerId == request.auth.uid;
+    }
+
+    match /videos/{videoId} {
+      allow get: if isSignedIn() && isValidId(videoId) && (existing().visibility == 'public' || existing().userId == request.auth.uid);
+      allow list: if isSignedIn() && existing().visibility == 'public';
+
+      allow create: if isSignedIn() &&
+                       isValidId(videoId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().likesCount == 0 &&
+                       incoming().commentsCount == 0 &&
+                       incoming().keys().hasAll(['userId', 'authorName', 'authorUsername', 'caption', 'videoUrl', 'durationMs', 'tags', 'visibility', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'authorName', 'authorUsername', 'authorAvatarUrl', 'caption', 'videoUrl', 'localFileName', 'thumbnailData', 'durationMs', 'tags', 'visibility', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt']) &&
+                       isValidVideo(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(videoId) &&
+                       isValidVideo(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().visibility == existing().visibility && (
+                         // Tier 1: Owner edits caption/tags
+                         (existing().userId == request.auth.uid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['caption', 'tags', 'updatedAt'])) ||
+                         // Tier 2a: Atomic like/unlike counter backed by video_likes existence
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['likesCount', 'updatedAt']) && (
+                           (incoming().likesCount == existing().likesCount + 1 &&
+                            !exists(/databases/$(database)/documents/video_likes/$(videoId + '_' + request.auth.uid)) &&
+                            existsAfter(/databases/$(database)/documents/video_likes/$(videoId + '_' + request.auth.uid))) ||
+                           (incoming().likesCount == existing().likesCount - 1 &&
+                            incoming().likesCount >= 0 &&
+                            exists(/databases/$(database)/documents/video_likes/$(videoId + '_' + request.auth.uid)) &&
+                            !existsAfter(/databases/$(database)/documents/video_likes/$(videoId + '_' + request.auth.uid)))
+                         )) ||
+                         // Tier 2b: Comment count increment/decrement
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['commentsCount', 'updatedAt']) && (
+                           incoming().commentsCount == existing().commentsCount + 1 ||
+                           (incoming().commentsCount == existing().commentsCount - 1 && incoming().commentsCount >= 0)
+                         ))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(videoId) && existing().userId == request.auth.uid;
+
+      match /comments/{commentId} {
+        allow get: if isSignedIn() && isValidId(videoId) && isValidId(commentId) && existing().videoId == videoId && existing().visibility == 'public';
+        allow list: if isSignedIn() && existing().videoId == videoId && existing().visibility == 'public';
+
+        allow create: if isSignedIn() &&
+                         isValidId(videoId) &&
+                         isValidId(commentId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().videoId == videoId &&
+                         incoming().keys().hasAll(['videoId', 'userId', 'authorName', 'authorUsername', 'text', 'visibility', 'createdAt']) &&
+                         incoming().keys().hasOnly(['videoId', 'userId', 'authorName', 'authorUsername', 'authorAvatarUrl', 'text', 'gifUrl', 'gifPreviewUrl', 'visibility', 'createdAt']) &&
+                         isValidComment(incoming()) &&
+                         exists(/databases/$(database)/documents/videos/$(videoId));
+
+        allow update: if false;
+
+        allow delete: if isSignedIn() && isValidId(videoId) && isValidId(commentId) && existing().userId == request.auth.uid;
+      }
+    }
+
+    match /video_likes/{likeId} {
+      allow get: if isSignedIn() && isValidId(likeId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(likeId) &&
+                       incoming().userId == request.auth.uid &&
+                       likeId == (incoming().videoId + '_' + request.auth.uid) &&
+                       incoming().keys().hasAll(['videoId', 'userId', 'createdAt']) &&
+                       incoming().keys().hasOnly(['videoId', 'userId', 'createdAt']) &&
+                       isValidVideoLike(incoming()) &&
+                       exists(/databases/$(database)/documents/videos/$(incoming().videoId));
+
+      allow update: if false;
+
+      allow delete: if isSignedIn() && isValidId(likeId) && existing().userId == request.auth.uid;
+    }
+  }
+}

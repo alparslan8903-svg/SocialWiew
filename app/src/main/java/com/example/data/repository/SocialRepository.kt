@@ -1,0 +1,573 @@
+package com.example.data.repository
+
+import android.content.Context
+import com.example.R
+import com.example.data.model.FollowRecord
+import com.example.data.model.UserPublic
+import com.example.data.model.VideoComment
+import com.example.data.model.VideoLikeRecord
+import com.example.data.model.VideoPost
+import com.google.firebase.Firebase
+import com.google.firebase.Timestamp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.auth
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
+import com.google.firebase.firestore.snapshots
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.tasks.await
+
+class SocialRepository(
+    private val db: FirebaseFirestore,
+    private val auth: FirebaseAuth = Firebase.auth
+) {
+    constructor(context: Context) : this(
+        FirebaseFirestore.getInstance(
+            context.applicationContext.getString(R.string.firestore_database_id)
+        )
+    )
+
+    private fun requireUserId(): String {
+        return auth.currentUser?.uid
+            ?: throw IllegalStateException("Devam etmek için Google ile giriş yapmalısınız.")
+    }
+
+    private fun <T> Flow<T>.withFirestoreErrorLogging(
+        operationType: OperationType,
+        path: String,
+        expectedUid: String? = null
+    ): Flow<T> = catch { error ->
+        val firestoreError = generateSequence(error) { it.cause }
+            .filterIsInstance<FirebaseFirestoreException>()
+            .firstOrNull()
+        if (firestoreError == null && error is CancellationException) throw error
+        val exceptionToLog = firestoreError ?: (error as? Exception)
+        if (exceptionToLog != null && (expectedUid == null || auth.currentUser?.uid == expectedUid)) {
+            handleFirestoreError(exceptionToLog, operationType, path, auth)
+        }
+        throw error
+    }
+
+    suspend fun ensureUserProfile(user: FirebaseUser? = auth.currentUser): Result<UserPublic> = runCatching {
+        val current = user ?: throw IllegalStateException("Kullanıcı oturumu bulunamadı.")
+        val uid = current.uid
+        val publicRef = db.collection("users_public").document(uid)
+        val privateRef = db.collection("users_private").document(uid)
+
+        val existingSnap = try {
+            publicRef.get().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.GET, publicRef.path, auth)
+            throw e
+        }
+
+        if (existingSnap.exists()) {
+            val profile = existingSnap.toObject(
+                UserPublic::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+            )
+            if (profile != null) return@runCatching profile
+        }
+
+        val rawName = current.displayName?.trim().takeUnless { it.isNullOrBlank() } ?: "SocialWiew Kullanıcısı"
+        val displayName = rawName.take(50)
+        val emailPrefix = current.email?.substringBefore("@")?.lowercase()
+            ?.replace(Regex("[^a-z0-9_]"), "")
+            ?.take(18)
+            ?.takeIf { it.length >= 3 }
+        val fallbackHandle = (emailPrefix ?: "viber_${uid.take(6).lowercase()}").padEnd(3, 'x').take(30)
+        val avatarUrl = current.photoUrl?.toString()?.take(1000) ?: ""
+
+        val publicPayload = mapOf(
+            "userId" to uid,
+            "displayName" to displayName,
+            "username" to fallbackHandle,
+            "bio" to "",
+            "avatarUrl" to avatarUrl,
+            "followersCount" to 0L,
+            "followingCount" to 0L,
+            "videosCount" to 0L,
+            "isPublic" to true,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+
+        val privatePayload = mapOf(
+            "userId" to uid,
+            "email" to (current.email ?: ""),
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+
+        val batch = db.batch()
+        batch.set(publicRef, publicPayload)
+        batch.set(privateRef, privatePayload)
+        try {
+            batch.commit().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, publicRef.path, auth)
+            throw e
+        }
+
+        UserPublic(
+            id = uid,
+            userId = uid,
+            displayName = displayName,
+            username = fallbackHandle,
+            bio = "",
+            avatarUrl = avatarUrl,
+            followersCount = 0L,
+            followingCount = 0L,
+            videosCount = 0L,
+            isPublic = true,
+            createdAt = Timestamp.now(),
+            updatedAt = Timestamp.now()
+        )
+    }
+
+    fun observePublicVideos(): Flow<List<VideoPost>> = flow {
+        val uid = requireUserId()
+        val path = "videos"
+        emitAll(
+            db.collection(path)
+                .whereEqualTo("visibility", "public")
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        VideoPost::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    ).sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                }
+                .withFirestoreErrorLogging(OperationType.LIST, path, uid)
+        )
+    }
+
+    fun observeUserVideos(userId: String): Flow<List<VideoPost>> = flow {
+        val uid = requireUserId()
+        val path = "videos"
+        emitAll(
+            db.collection(path)
+                .whereEqualTo("visibility", "public")
+                .whereEqualTo("userId", userId)
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        VideoPost::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    ).sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                }
+                .withFirestoreErrorLogging(OperationType.LIST, path, uid)
+        )
+    }
+
+    fun observeCreators(): Flow<List<UserPublic>> = flow {
+        val uid = requireUserId()
+        val path = "users_public"
+        emitAll(
+            db.collection(path)
+                .whereEqualTo("isPublic", true)
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        UserPublic::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    ).sortedByDescending { it.followersCount }
+                }
+                .withFirestoreErrorLogging(OperationType.LIST, path, uid)
+        )
+    }
+
+    fun observeUserProfile(userId: String): Flow<UserPublic?> = flow {
+        val uid = requireUserId()
+        val path = "users_public/$userId"
+        emitAll(
+            db.collection("users_public").document(userId)
+                .snapshots()
+                .map { snapshot ->
+                    if (!snapshot.exists()) null
+                    else snapshot.toObject(
+                        UserPublic::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    )
+                }
+                .withFirestoreErrorLogging(OperationType.GET, path, uid)
+        )
+    }
+
+    fun observeFollowingIds(userId: String): Flow<Set<String>> = flow {
+        val uid = requireUserId()
+        val path = "follows"
+        emitAll(
+            db.collection(path)
+                .whereEqualTo("followerId", userId)
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        FollowRecord::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    ).map { it.followingId }.toSet()
+                }
+                .withFirestoreErrorLogging(OperationType.LIST, path, uid)
+        )
+    }
+
+    fun observeLikedVideoIds(userId: String): Flow<Set<String>> = flow {
+        val uid = requireUserId()
+        val path = "video_likes"
+        emitAll(
+            db.collection(path)
+                .whereEqualTo("userId", userId)
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        VideoLikeRecord::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    ).map { it.videoId }.toSet()
+                }
+                .withFirestoreErrorLogging(OperationType.LIST, path, uid)
+        )
+    }
+
+    fun observeComments(videoId: String): Flow<List<VideoComment>> = flow {
+        val uid = requireUserId()
+        val path = "videos/$videoId/comments"
+        emitAll(
+            db.collection("videos").document(videoId).collection("comments")
+                .whereEqualTo("videoId", videoId)
+                .whereEqualTo("visibility", "public")
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        VideoComment::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    ).sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+                }
+                .withFirestoreErrorLogging(OperationType.LIST, path, uid)
+        )
+    }
+
+    suspend fun updateProfile(
+        displayName: String,
+        username: String,
+        bio: String
+    ): Result<Unit> = runCatching {
+        val uid = requireUserId()
+        val cleanDisplayName = displayName.trim().take(50)
+        val cleanUsername = username.trim().lowercase().replace(Regex("[^a-z0-9_.]"), "").take(30)
+        require(cleanDisplayName.isNotEmpty()) { "İsim boş olamaz." }
+        require(cleanUsername.length >= 3) { "Kullanıcı adı en az 3 karakter olmalıdır." }
+
+        val docRef = db.collection("users_public").document(uid)
+        val payload = mapOf(
+            "displayName" to cleanDisplayName,
+            "username" to cleanUsername,
+            "bio" to bio.trim().take(200),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        try {
+            docRef.update(payload).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docRef.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun toggleFollow(
+        targetUserId: String,
+        currentlyFollowing: Boolean
+    ): Result<Unit> = runCatching {
+        val uid = requireUserId()
+        require(uid != targetUserId) { "Kendinizi takip edemezsiniz." }
+
+        val followId = "${uid}_${targetUserId}"
+        val followRef = db.collection("follows").document(followId)
+        val myProfileRef = db.collection("users_public").document(uid)
+        val targetProfileRef = db.collection("users_public").document(targetUserId)
+
+        val batch = db.batch()
+        if (currentlyFollowing) {
+            batch.delete(followRef)
+            batch.update(
+                myProfileRef,
+                mapOf(
+                    "followingCount" to FieldValue.increment(-1L),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+            batch.update(
+                targetProfileRef,
+                mapOf(
+                    "followersCount" to FieldValue.increment(-1L),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+        } else {
+            batch.set(
+                followRef,
+                mapOf(
+                    "followerId" to uid,
+                    "followingId" to targetUserId,
+                    "createdAt" to FieldValue.serverTimestamp()
+                )
+            )
+            batch.update(
+                myProfileRef,
+                mapOf(
+                    "followingCount" to FieldValue.increment(1L),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+            batch.update(
+                targetProfileRef,
+                mapOf(
+                    "followersCount" to FieldValue.increment(1L),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+        }
+
+        try {
+            batch.commit().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, followRef.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun toggleLike(
+        videoId: String,
+        currentlyLiked: Boolean
+    ): Result<Unit> = runCatching {
+        val uid = requireUserId()
+        val likeId = "${videoId}_${uid}"
+        val likeRef = db.collection("video_likes").document(likeId)
+        val videoRef = db.collection("videos").document(videoId)
+
+        val batch = db.batch()
+        if (currentlyLiked) {
+            batch.delete(likeRef)
+            batch.update(
+                videoRef,
+                mapOf(
+                    "likesCount" to FieldValue.increment(-1L),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+        } else {
+            batch.set(
+                likeRef,
+                mapOf(
+                    "videoId" to videoId,
+                    "userId" to uid,
+                    "createdAt" to FieldValue.serverTimestamp()
+                )
+            )
+            batch.update(
+                videoRef,
+                mapOf(
+                    "likesCount" to FieldValue.increment(1L),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+        }
+
+        try {
+            batch.commit().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, likeRef.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun publishVideo(
+        author: UserPublic,
+        caption: String,
+        videoUrl: String,
+        localFileName: String?,
+        thumbnailData: String?,
+        durationMs: Long,
+        tags: List<String>
+    ): Result<String> = runCatching {
+        val uid = requireUserId()
+        require(videoUrl.isNotBlank() || !localFileName.isNullOrBlank()) {
+            "Lütfen bir video seçin veya geçerli bir video bağlantısı girin."
+        }
+
+        val videoRef = db.collection("videos").document()
+        val profileRef = db.collection("users_public").document(uid)
+
+        val payload = buildMap<String, Any> {
+            put("userId", uid)
+            put("authorName", author.displayName.ifBlank { "Kullanıcı" }.take(60))
+            put("authorUsername", author.username.ifBlank { "viber" }.take(40))
+            if (author.avatarUrl.isNotBlank()) put("authorAvatarUrl", author.avatarUrl.take(1000))
+            put("caption", caption.trim().take(300))
+            put("videoUrl", videoUrl.trim().take(2000))
+            if (!localFileName.isNullOrBlank()) put("localFileName", localFileName.take(200))
+            if (!thumbnailData.isNullOrBlank()) put("thumbnailData", thumbnailData.take(150000))
+            put("durationMs", durationMs.coerceAtLeast(0L))
+            put("tags", tags.map { it.trim().take(24) }.filter { it.isNotEmpty() }.take(5))
+            put("visibility", "public")
+            put("likesCount", 0L)
+            put("commentsCount", 0L)
+            put("createdAt", FieldValue.serverTimestamp())
+            put("updatedAt", FieldValue.serverTimestamp())
+        }
+
+        val batch = db.batch()
+        batch.set(videoRef, payload)
+        batch.update(
+            profileRef,
+            mapOf(
+                "videosCount" to FieldValue.increment(1L),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        )
+
+        try {
+            batch.commit().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, videoRef.path, auth)
+            throw e
+        }
+
+        videoRef.id
+    }
+
+    suspend fun deleteVideo(videoId: String): Result<Unit> = runCatching {
+        val uid = requireUserId()
+        val videoRef = db.collection("videos").document(videoId)
+        val profileRef = db.collection("users_public").document(uid)
+
+        val batch = db.batch()
+        batch.delete(videoRef)
+        batch.update(
+            profileRef,
+            mapOf(
+                "videosCount" to FieldValue.increment(-1L),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        )
+
+        try {
+            batch.commit().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, videoRef.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun addComment(
+        videoId: String,
+        author: UserPublic,
+        text: String,
+        gifUrl: String? = null,
+        gifPreviewUrl: String? = null
+    ): Result<String> = runCatching {
+        val uid = requireUserId()
+        val cleanText = text.trim().take(500)
+        val cleanGifUrl = gifUrl?.trim()?.take(1000)
+        require(cleanText.isNotEmpty() || !cleanGifUrl.isNullOrEmpty()) {
+            "Yorum metni veya GIF seçmelisiniz."
+        }
+
+        val videoRef = db.collection("videos").document(videoId)
+        val commentRef = videoRef.collection("comments").document()
+
+        val payload = buildMap<String, Any> {
+            put("videoId", videoId)
+            put("userId", uid)
+            put("authorName", author.displayName.ifBlank { "Kullanıcı" }.take(60))
+            put("authorUsername", author.username.ifBlank { "viber" }.take(40))
+            if (author.avatarUrl.isNotBlank()) put("authorAvatarUrl", author.avatarUrl.take(1000))
+            put("text", cleanText)
+            if (!cleanGifUrl.isNullOrEmpty()) put("gifUrl", cleanGifUrl)
+            if (!gifPreviewUrl.isNullOrBlank()) put("gifPreviewUrl", gifPreviewUrl.trim().take(1000))
+            put("visibility", "public")
+            put("createdAt", FieldValue.serverTimestamp())
+        }
+
+        val batch = db.batch()
+        batch.set(commentRef, payload)
+        batch.update(
+            videoRef,
+            mapOf(
+                "commentsCount" to FieldValue.increment(1L),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        )
+
+        try {
+            batch.commit().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, commentRef.path, auth)
+            throw e
+        }
+
+        commentRef.id
+    }
+
+    suspend fun deleteComment(videoId: String, commentId: String): Result<Unit> = runCatching {
+        requireUserId()
+        val videoRef = db.collection("videos").document(videoId)
+        val commentRef = videoRef.collection("comments").document(commentId)
+
+        val batch = db.batch()
+        batch.delete(commentRef)
+        batch.update(
+            videoRef,
+            mapOf(
+                "commentsCount" to FieldValue.increment(-1L),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        )
+
+        try {
+            batch.commit().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, commentRef.path, auth)
+            throw e
+        }
+    }
+
+    suspend fun getVideoById(videoId: String): VideoPost? {
+        val docRef = db.collection("videos").document(videoId)
+        return try {
+            docRef.get().await().toObject(
+                VideoPost::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.GET, docRef.path, auth)
+            throw e
+        }
+    }
+}

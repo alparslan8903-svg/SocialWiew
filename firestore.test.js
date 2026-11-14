@@ -1,0 +1,287 @@
+const {
+  initializeTestEnvironment,
+  assertFails,
+  assertSucceeds,
+} = require("@firebase/rules-unit-testing");
+const { test, before, after, beforeEach } = require("node:test");
+const fs = require("node:fs");
+
+let testEnv;
+const PROJECT_ID = process.env.GCP_PROJECT || "demo-no-project";
+const ALICE_UID = "alice123";
+const BOB_UID = "bob456";
+
+const [emulatorHost, emulatorPortStr] = (process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8085").split(":");
+const emulatorPort = parseInt(emulatorPortStr, 10);
+
+const pastTs = () => new Date(Date.now() - 1000);
+
+before(async () => {
+  const rules = fs.readFileSync("./firestore.rules", "utf8");
+  testEnv = await initializeTestEnvironment({
+    projectId: PROJECT_ID,
+    firestore: {
+      rules,
+      host: emulatorHost,
+      port: emulatorPort,
+    },
+  });
+});
+
+after(async () => {
+  if (testEnv) {
+    await testEnv.cleanup();
+  }
+});
+
+beforeEach(async () => {
+  if (testEnv) {
+    await testEnv.clearFirestore();
+  }
+});
+
+async function seedProfiles() {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    const ts = pastTs();
+    await db.collection("users_public").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      displayName: "Alice",
+      username: "alice_vibes",
+      bio: "Video creator",
+      followersCount: 0,
+      followingCount: 0,
+      videosCount: 0,
+      isPublic: true,
+      createdAt: ts,
+      updatedAt: ts,
+    });
+    await db.collection("users_public").doc(BOB_UID).set({
+      userId: BOB_UID,
+      displayName: "Bob",
+      username: "bob_reels",
+      bio: "Filmmaker",
+      followersCount: 0,
+      followingCount: 0,
+      videosCount: 0,
+      isPublic: true,
+      createdAt: ts,
+      updatedAt: ts,
+    });
+  });
+}
+
+test("Unauthenticated user: cannot list or write videos", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  await assertFails(unauthDb.collection("videos").where("visibility", "==", "public").get());
+  await assertFails(unauthDb.collection("users_public").where("isPublic", "==", true).get());
+});
+
+test("Authenticated user: PII isolation prevents reading another user's private email", async () => {
+  const ts = pastTs();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await context.firestore().collection("users_private").doc(BOB_UID).set({
+      userId: BOB_UID,
+      email: "bob@example.com",
+      createdAt: ts,
+      updatedAt: ts,
+    });
+  });
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  await assertFails(aliceDb.collection("users_private").doc(BOB_UID).get());
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  await assertSucceeds(bobDb.collection("users_private").doc(BOB_UID).get());
+});
+
+test("Authenticated user: can create own public profile and rejects ghost fields", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const ts = pastTs();
+  await assertSucceeds(
+    aliceDb.collection("users_public").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      displayName: "Alice",
+      username: "alice_vibes",
+      followersCount: 0,
+      followingCount: 0,
+      videosCount: 0,
+      isPublic: true,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Shadow update with ghost field isVerified fails
+  await assertFails(
+    aliceDb.collection("users_public").doc(ALICE_UID).update({
+      bio: "Updated bio",
+      isVerified: true,
+      updatedAt: pastTs(),
+    })
+  );
+});
+
+test("Authenticated user: cannot spoof another user's video or delete it", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const ts = pastTs();
+
+  // Alice cannot create video authored as Bob
+  await assertFails(
+    aliceDb.collection("videos").doc("vid1").set({
+      userId: BOB_UID,
+      authorName: "Bob",
+      authorUsername: "bob_reels",
+      caption: "Spoof",
+      videoUrl: "https://example.com/v.mp4",
+      durationMs: 5000,
+      tags: ["vlog"],
+      visibility: "public",
+      likesCount: 0,
+      commentsCount: 0,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Alice creates valid video
+  await assertSucceeds(
+    aliceDb.collection("videos").doc("vid1").set({
+      userId: ALICE_UID,
+      authorName: "Alice",
+      authorUsername: "alice_vibes",
+      caption: "My first reel",
+      videoUrl: "https://example.com/v.mp4",
+      durationMs: 5000,
+      tags: ["vlog"],
+      visibility: "public",
+      likesCount: 0,
+      commentsCount: 0,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Unfiltered list query fails; aligned query succeeds
+  await assertFails(bobDb.collection("videos").get());
+  await assertSucceeds(bobDb.collection("videos").where("visibility", "==", "public").get());
+
+  // Bob cannot delete Alice's video
+  await assertFails(bobDb.collection("videos").doc("vid1").delete());
+});
+
+test("Atomic follow and like batches succeed while unbacked counter tampering fails", async () => {
+  await seedProfiles();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const ts = pastTs();
+
+  await assertSucceeds(
+    aliceDb.collection("videos").doc("vid1").set({
+      userId: ALICE_UID,
+      authorName: "Alice",
+      authorUsername: "alice_vibes",
+      caption: "Sunset clip",
+      videoUrl: "https://example.com/v.mp4",
+      durationMs: 5000,
+      tags: ["travel"],
+      visibility: "public",
+      likesCount: 0,
+      commentsCount: 0,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Tampering likesCount without video_likes doc in batch fails
+  await assertFails(
+    bobDb.collection("videos").doc("vid1").update({
+      likesCount: 1,
+      updatedAt: pastTs(),
+    })
+  );
+
+  // Atomic like batch succeeds
+  const likeBatch = bobDb.batch();
+  likeBatch.set(bobDb.collection("video_likes").doc(`vid1_${BOB_UID}`), {
+    videoId: "vid1",
+    userId: BOB_UID,
+    createdAt: pastTs(),
+  });
+  likeBatch.update(bobDb.collection("videos").doc("vid1"), {
+    likesCount: 1,
+    updatedAt: pastTs(),
+  });
+  await assertSucceeds(likeBatch.commit());
+
+  // Atomic follow batch succeeds
+  const followBatch = bobDb.batch();
+  followBatch.set(bobDb.collection("follows").doc(`${BOB_UID}_${ALICE_UID}`), {
+    followerId: BOB_UID,
+    followingId: ALICE_UID,
+    createdAt: pastTs(),
+  });
+  followBatch.update(bobDb.collection("users_public").doc(BOB_UID), {
+    followingCount: 1,
+    updatedAt: pastTs(),
+  });
+  followBatch.update(bobDb.collection("users_public").doc(ALICE_UID), {
+    followersCount: 1,
+    updatedAt: pastTs(),
+  });
+  await assertSucceeds(followBatch.commit());
+});
+
+test("Tenor GIF comment: valid GIF comment succeeds and empty comment fails", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const ts = pastTs();
+
+  await assertSucceeds(
+    aliceDb.collection("videos").doc("vid1").set({
+      userId: ALICE_UID,
+      authorName: "Alice",
+      authorUsername: "alice_vibes",
+      caption: "Dance clip",
+      videoUrl: "https://example.com/v.mp4",
+      durationMs: 8000,
+      tags: ["dans"],
+      visibility: "public",
+      likesCount: 0,
+      commentsCount: 0,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Empty comment (no text and no gifUrl) fails
+  await assertFails(
+    bobDb.collection("videos").doc("vid1").collection("comments").doc("c1").set({
+      videoId: "vid1",
+      userId: BOB_UID,
+      authorName: "Bob",
+      authorUsername: "bob_reels",
+      text: "",
+      visibility: "public",
+      createdAt: pastTs(),
+    })
+  );
+
+  // Valid Tenor GIF comment succeeds
+  const commentBatch = bobDb.batch();
+  commentBatch.set(bobDb.collection("videos").doc("vid1").collection("comments").doc("c1"), {
+    videoId: "vid1",
+    userId: BOB_UID,
+    authorName: "Bob",
+    authorUsername: "bob_reels",
+    text: "",
+    gifUrl: "https://media.tenor.com/example.gif",
+    gifPreviewUrl: "https://media.tenor.com/example_tiny.gif",
+    visibility: "public",
+    createdAt: pastTs(),
+  });
+  commentBatch.update(bobDb.collection("videos").doc("vid1"), {
+    commentsCount: 1,
+    updatedAt: pastTs(),
+  });
+  await assertSucceeds(commentBatch.commit());
+});

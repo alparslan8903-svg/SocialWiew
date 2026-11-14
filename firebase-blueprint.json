@@ -1,0 +1,304 @@
+{
+  "entities": {
+    "UserPublic": {
+      "title": "UserPublic",
+      "description": "Public creator profile visible to authenticated VibeReel users.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Creator display name."
+        },
+        "username": {
+          "type": "string",
+          "description": "Unique creator handle."
+        },
+        "bio": {
+          "type": "string",
+          "description": "Short creator biography."
+        },
+        "avatarUrl": {
+          "type": "string",
+          "description": "Profile avatar URL."
+        },
+        "followersCount": {
+          "type": "integer",
+          "description": "Total number of followers."
+        },
+        "followingCount": {
+          "type": "integer",
+          "description": "Total number of accounts followed."
+        },
+        "videosCount": {
+          "type": "integer",
+          "description": "Total uploaded videos count."
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Visibility flag for public creator discovery."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of profile creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last profile update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "username",
+        "followersCount",
+        "followingCount",
+        "videosCount",
+        "isPublic",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserPrivate": {
+      "title": "UserPrivate",
+      "description": "Owner-only private PII for authenticated users.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user."
+        },
+        "email": {
+          "type": "string",
+          "description": "Private user email address."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "createdAt", "updatedAt"]
+    },
+    "Follow": {
+      "title": "Follow",
+      "description": "Directed follow relationship between two creators.",
+      "type": "object",
+      "properties": {
+        "followerId": {
+          "type": "string",
+          "description": "UID of the user who follows."
+        },
+        "followingId": {
+          "type": "string",
+          "description": "UID of the creator being followed."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of follow action (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["followerId", "followingId", "createdAt"]
+    },
+    "Video": {
+      "title": "Video",
+      "description": "User-uploaded short video post in the VibeReel social feed.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Creator Firebase Auth UID."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Creator display name snapshot."
+        },
+        "authorUsername": {
+          "type": "string",
+          "description": "Creator username snapshot."
+        },
+        "authorAvatarUrl": {
+          "type": "string",
+          "description": "Creator avatar URL snapshot."
+        },
+        "caption": {
+          "type": "string",
+          "description": "Video caption or description."
+        },
+        "videoUrl": {
+          "type": "string",
+          "description": "Playable HTTPS video URL if provided."
+        },
+        "localFileName": {
+          "type": "string",
+          "description": "App-private filename for device-picked videos."
+        },
+        "thumbnailData": {
+          "type": "string",
+          "description": "Compact base64 JPEG thumbnail preview."
+        },
+        "durationMs": {
+          "type": "integer",
+          "description": "Duration of the video in milliseconds."
+        },
+        "tags": {
+          "type": "array",
+          "description": "Up to 5 topic tags."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public"],
+          "description": "Feed visibility status."
+        },
+        "likesCount": {
+          "type": "integer",
+          "description": "Total likes count."
+        },
+        "commentsCount": {
+          "type": "integer",
+          "description": "Total comments count."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of upload (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "authorName",
+        "authorUsername",
+        "caption",
+        "videoUrl",
+        "durationMs",
+        "tags",
+        "visibility",
+        "likesCount",
+        "commentsCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "VideoLike": {
+      "title": "VideoLike",
+      "description": "Per-user like record for a video.",
+      "type": "object",
+      "properties": {
+        "videoId": {
+          "type": "string",
+          "description": "ID of the liked video."
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of the user who liked the video."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of like (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["videoId", "userId", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Text or Tenor GIF comment on a video.",
+      "type": "object",
+      "properties": {
+        "videoId": {
+          "type": "string",
+          "description": "Parent video document ID."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Comment author UID."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Author display name."
+        },
+        "authorUsername": {
+          "type": "string",
+          "description": "Author handle."
+        },
+        "authorAvatarUrl": {
+          "type": "string",
+          "description": "Author avatar URL."
+        },
+        "text": {
+          "type": "string",
+          "description": "Comment text content."
+        },
+        "gifUrl": {
+          "type": "string",
+          "description": "Full Tenor GIF URL if a GIF is attached."
+        },
+        "gifPreviewUrl": {
+          "type": "string",
+          "description": "Tiny Tenor GIF preview URL."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public"],
+          "description": "Comment visibility."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of comment creation (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "videoId",
+        "userId",
+        "authorName",
+        "authorUsername",
+        "text",
+        "visibility",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users_public/{userId}": {
+      "schema": { "$ref": "#/entities/UserPublic" },
+      "description": "Public creator profiles."
+    },
+    "/users_private/{userId}": {
+      "schema": { "$ref": "#/entities/UserPrivate" },
+      "description": "Private PII records isolated by owner UID."
+    },
+    "/follows/{followId}": {
+      "schema": { "$ref": "#/entities/Follow" },
+      "description": "Follow relationships keyed as {followerId}_{followingId}."
+    },
+    "/videos/{videoId}": {
+      "schema": { "$ref": "#/entities/Video" },
+      "description": "Public social video posts."
+    },
+    "/video_likes/{likeId}": {
+      "schema": { "$ref": "#/entities/VideoLike" },
+      "description": "Video like records keyed as {videoId}_{userId}."
+    },
+    "/videos/{videoId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/Comment" },
+      "description": "Text and Tenor GIF comments for a video."
+    }
+  }
+}

@@ -1,0 +1,141 @@
+package com.example.data.repository
+
+import com.example.base.FirestoreEmulatorTestBase
+import com.google.firebase.firestore.FirebaseFirestoreException
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Test
+import java.util.UUID
+
+class VibeReelRepositoryRuleTest : FirestoreEmulatorTestBase() {
+
+    @Test
+    fun publishVideo_follow_like_and_gifComment_fullFlow() = runBlocking {
+        val aliceUid = signInTestUser("alice_${UUID.randomUUID()}@test.com")
+        val aliceRepo = SocialRepository(firestore, auth)
+        val aliceProfile = withTimeout(DEFAULT_TIMEOUT_MS) {
+            aliceRepo.ensureUserProfile(auth.currentUser).getOrThrow()
+        }
+        assertEquals(aliceUid, aliceProfile.userId)
+
+        val videoId = withTimeout(DEFAULT_TIMEOUT_MS) {
+            aliceRepo.publishVideo(
+                author = aliceProfile,
+                caption = "Test reel #${UUID.randomUUID().toString().take(6)}",
+                videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+                localFileName = null,
+                thumbnailData = null,
+                durationMs = 15000L,
+                tags = listOf("vlog", "test")
+            ).getOrThrow()
+        }
+        assertTrue(videoId.isNotBlank())
+
+        val feed = withTimeout(FLOW_TIMEOUT_MS) {
+            aliceRepo.observePublicVideos().first { list -> list.any { it.id == videoId } }
+        }
+        assertTrue(feed.any { it.id == videoId })
+
+        val userVideos = withTimeout(FLOW_TIMEOUT_MS) {
+            aliceRepo.observeUserVideos(aliceUid).first { list -> list.any { it.id == videoId } }
+        }
+        assertTrue(userVideos.any { it.id == videoId && it.userId == aliceUid })
+
+        // Switch to Bob: follow Alice, like Alice's video, post Tenor GIF comment
+        val bobUid = signInTestUser("bob_${UUID.randomUUID()}@test.com")
+        val bobRepo = SocialRepository(firestore, auth)
+        val bobProfile = withTimeout(DEFAULT_TIMEOUT_MS) {
+            bobRepo.ensureUserProfile(auth.currentUser).getOrThrow()
+        }
+
+        withTimeout(DEFAULT_TIMEOUT_MS) {
+            bobRepo.toggleFollow(targetUserId = aliceUid, currentlyFollowing = false).getOrThrow()
+        }
+        val followingIds = withTimeout(FLOW_TIMEOUT_MS) {
+            bobRepo.observeFollowingIds(bobUid).first { it.contains(aliceUid) }
+        }
+        assertTrue(followingIds.contains(aliceUid))
+
+        withTimeout(DEFAULT_TIMEOUT_MS) {
+            bobRepo.toggleLike(videoId = videoId, currentlyLiked = false).getOrThrow()
+        }
+        val likedIds = withTimeout(FLOW_TIMEOUT_MS) {
+            bobRepo.observeLikedVideoIds(bobUid).first { it.contains(videoId) }
+        }
+        assertTrue(likedIds.contains(videoId))
+
+        val commentId = withTimeout(DEFAULT_TIMEOUT_MS) {
+            bobRepo.addComment(
+                videoId = videoId,
+                author = bobProfile,
+                text = "Harika video!",
+                gifUrl = "https://media.tenor.com/demo.gif",
+                gifPreviewUrl = "https://media.tenor.com/demo_tiny.gif"
+            ).getOrThrow()
+        }
+        assertTrue(commentId.isNotBlank())
+
+        val comments = withTimeout(FLOW_TIMEOUT_MS) {
+            bobRepo.observeComments(videoId).first { list -> list.any { it.id == commentId } }
+        }
+        assertTrue(comments.any { it.gifUrl == "https://media.tenor.com/demo.gif" })
+
+        // Cross-user negative check: Bob cannot delete Alice's video
+        try {
+            withTimeout(DEFAULT_TIMEOUT_MS) {
+                bobRepo.deleteVideo(videoId).getOrThrow()
+            }
+            fail("Expected PERMISSION_DENIED when Bob deletes Alice's video")
+        } catch (e: Exception) {
+            val fsError = e.unwrapFirestoreException()
+            assertNotNull("Expected FirebaseFirestoreException, got $e", fsError)
+            assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, fsError!!.code)
+        }
+    }
+
+    @Test
+    fun unauthenticatedQuery_and_privatePiiRead_failWithPermissionDenied() = runBlocking {
+        val aliceUid = signInTestUser("alice_pii_${UUID.randomUUID()}@test.com")
+        val aliceRepo = SocialRepository(firestore, auth)
+        withTimeout(DEFAULT_TIMEOUT_MS) {
+            aliceRepo.ensureUserProfile(auth.currentUser).getOrThrow()
+        }
+
+        // Bob cannot read Alice's private PII document
+        signInTestUser("bob_pii_${UUID.randomUUID()}@test.com")
+        try {
+            withTimeout(DEFAULT_TIMEOUT_MS) {
+                firestore.collection("users_private").document(aliceUid).get().await()
+            }
+            fail("Expected PERMISSION_DENIED reading another user's private doc")
+        } catch (e: Exception) {
+            val fsError = e.unwrapFirestoreException()
+            assertNotNull("Expected FirebaseFirestoreException, got $e", fsError)
+            assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, fsError!!.code)
+        }
+
+        // Unauthenticated query fails
+        auth.signOut()
+        try {
+            withTimeout(DEFAULT_TIMEOUT_MS) {
+                firestore.collection("videos").whereEqualTo("visibility", "public").get().await()
+            }
+            fail("Expected PERMISSION_DENIED when unauthenticated")
+        } catch (e: Exception) {
+            val fsError = e.unwrapFirestoreException()
+            assertNotNull("Expected FirebaseFirestoreException, got $e", fsError)
+            assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, fsError!!.code)
+        }
+    }
+
+    private companion object {
+        const val DEFAULT_TIMEOUT_MS = 5000L
+        const val FLOW_TIMEOUT_MS = 4000L
+    }
+}

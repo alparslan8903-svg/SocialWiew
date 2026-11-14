@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">SocialWiew</string>
+    <string name="tagline">Kısa videolar paylaş, takip et ve GIF\'lerle tepki ver</string>
+    <string name="sign_in_google">Google ile Giriş Yap</string>
+    <string name="nav_feed">Akış</string>
+    <string name="nav_discover">Keşfet</string>
+    <string name="nav_upload">Yükle</string>
+    <string name="nav_profile">Profil</string>
+    <string name="tab_for_you">Senin İçin</string>
+    <string name="tab_following">Takip</string>
+    <string name="follow">Takip Et</string>
+    <string name="following">Takip Ediliyor</string>
+    <string name="comments_title">Yorumlar</string>
+    <string name="comment_hint">Yorum yaz...</string>
+    <string name="tenor_search_hint">Tenor\'da GIF ara...</string>
+    <string name="upload_title">Yeni Video Paylaş</string>
+    <string name="pick_video_gallery">Galeriden Video Seç</string>
+    <string name="publish_video">Videoyu Paylaş</string>
+    <string name="edit_profile">Profili Düzenle</string>
+    <string name="sign_out">Çıkış Yap</string>
+</resources>
