@@ -285,3 +285,62 @@ test("Tenor GIF comment: valid GIF comment succeeds and empty comment fails", as
   });
   await assertSucceeds(commentBatch.commit());
 });
+
+test("Cloud video media_chunks: creator can upload chunks atomically, others can read, others cannot spoof", async () => {
+  await seedProfiles();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const ts = pastTs();
+
+  const uploadBatch = aliceDb.batch();
+  uploadBatch.set(aliceDb.collection("videos").doc("vid_cloud"), {
+    userId: ALICE_UID,
+    authorName: "Alice",
+    authorUsername: "alice_vibes",
+    caption: "Cloud reel",
+    videoUrl: "",
+    chunkCount: 1,
+    durationMs: 4000,
+    tags: ["vlog"],
+    visibility: "public",
+    likesCount: 0,
+    commentsCount: 0,
+    createdAt: ts,
+    updatedAt: ts,
+  });
+  uploadBatch.set(
+    aliceDb.collection("videos").doc("vid_cloud").collection("media_chunks").doc("0"),
+    {
+      videoId: "vid_cloud",
+      userId: ALICE_UID,
+      chunkIndex: 0,
+      data: "AAAAIGZ0eXBpc29t",
+      visibility: "public",
+      createdAt: ts,
+    }
+  );
+  await assertSucceeds(uploadBatch.commit());
+
+  await assertSucceeds(
+    bobDb.collection("videos").doc("vid_cloud").collection("media_chunks")
+      .where("videoId", "==", "vid_cloud")
+      .where("visibility", "==", "public")
+      .get()
+  );
+
+  // Bob cannot spoof a chunk into Alice's video or delete Alice's chunk
+  await assertFails(
+    bobDb.collection("videos").doc("vid_cloud").collection("media_chunks").doc("1").set({
+      videoId: "vid_cloud",
+      userId: BOB_UID,
+      chunkIndex: 1,
+      data: "AAAA",
+      visibility: "public",
+      createdAt: ts,
+    })
+  );
+  await assertFails(
+    bobDb.collection("videos").doc("vid_cloud").collection("media_chunks").doc("0").delete()
+  );
+});
+

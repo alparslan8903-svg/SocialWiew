@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
@@ -93,7 +94,8 @@ fun FeedScreen(
     onOpenCreatorProfile: (String) -> Unit,
     onNavigateToUpload: () -> Unit,
     onNavigateToDiscover: () -> Unit,
-    onNavigateToSearch: () -> Unit = {}
+    onNavigateToSearch: () -> Unit = {},
+    onResolveCloudVideo: (suspend (String) -> Uri?)? = null
 ) {
     var selectedFeedTab by remember { mutableIntStateOf(0) } // 0 = For You, 1 = Following
     var isMuted by remember { mutableStateOf(false) }
@@ -159,7 +161,8 @@ fun FeedScreen(
                             onToggleLike = { onToggleLike(video) },
                             onToggleFollow = { onToggleFollow(video.userId) },
                             onOpenComments = { onOpenComments(video) },
-                            onOpenCreator = { onOpenCreatorProfile(video.userId) }
+                            onOpenCreator = { onOpenCreatorProfile(video.userId) },
+                            onResolveCloudVideo = onResolveCloudVideo
                         )
                     }
                 }
@@ -266,7 +269,8 @@ fun VideoFeedPage(
     onToggleLike: () -> Unit,
     onToggleFollow: () -> Unit,
     onOpenComments: () -> Unit,
-    onOpenCreator: () -> Unit
+    onOpenCreator: () -> Unit,
+    onResolveCloudVideo: (suspend (String) -> Uri?)? = null
 ) {
     val context = LocalContext.current
     val videoUri = remember(video.id, video.videoUrl, video.localFileName) {
@@ -323,7 +327,10 @@ fun VideoFeedPage(
                         thumbnailBase64 = video.thumbnailData,
                         isActive = isActive,
                         isMuted = isMuted,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        cloudVideoId = video.id,
+                        cloudChunkCount = video.chunkCount,
+                        onFetchCloudVideo = onResolveCloudVideo
                     )
                 }
 
@@ -517,7 +524,10 @@ fun VideoFeedPage(
                     thumbnailBase64 = video.thumbnailData,
                     isActive = isActive,
                     isMuted = isMuted,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    cloudVideoId = video.id,
+                    cloudChunkCount = video.chunkCount,
+                    onFetchCloudVideo = onResolveCloudVideo
                 )
 
                 // Bottom readability scrim

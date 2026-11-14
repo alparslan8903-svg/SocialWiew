@@ -449,27 +449,6 @@ private fun TenorGifPickerPanel(
                             color = MaterialTheme.colorScheme.secondary
                         )
                     }
-                    is TenorUiState.MissingApiKey -> {
-                        Column(
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .padding(horizontal = 12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "Tenor GIF arama için Secrets paneline TENOR_API_KEY ekleyin.",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Anahtar eklendikten sonra Trend ve arama GIF'leri otomatik yüklenecektir.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                     is TenorUiState.Error -> {
                         Column(
                             modifier = Modifier.align(Alignment.Center),

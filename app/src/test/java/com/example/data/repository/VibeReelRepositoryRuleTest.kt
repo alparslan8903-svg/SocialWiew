@@ -134,6 +134,57 @@ class VibeReelRepositoryRuleTest : FirestoreEmulatorTestBase() {
         }
     }
 
+    @Test
+    fun cloudVideoChunk_uploadAndDownload_succeedsAcrossUsers() = runBlocking {
+        val aliceUid = signInTestUser("alice_chunk_${UUID.randomUUID()}@test.com")
+        val aliceRepo = SocialRepository(firestore, auth)
+        val aliceProfile = withTimeout(DEFAULT_TIMEOUT_MS) {
+            aliceRepo.ensureUserProfile(auth.currentUser).getOrThrow()
+        }
+
+        val tempSource = java.io.File.createTempFile("sample_reel", ".mp4")
+        val payloadBytes = "FAKE_MP4_HEADER_AND_FRAMES_${UUID.randomUUID()}".toByteArray()
+        tempSource.writeBytes(payloadBytes)
+
+        val videoId = try {
+            withTimeout(DEFAULT_TIMEOUT_MS) {
+                aliceRepo.publishVideo(
+                    author = aliceProfile,
+                    caption = "Cloud chunk video",
+                    videoUrl = "",
+                    localFileName = tempSource.name,
+                    localFilePath = tempSource.absolutePath,
+                    thumbnailData = null,
+                    durationMs = 3000L,
+                    tags = listOf("vlog")
+                ).getOrThrow()
+            }
+        } finally {
+            tempSource.delete()
+        }
+
+        val published = withTimeout(DEFAULT_TIMEOUT_MS) {
+            aliceRepo.getVideoById(videoId)
+        }
+        assertNotNull(published)
+        assertEquals(1, published!!.chunkCount)
+
+        // Bob (another user / device) downloads and reconstructs the video from Firestore chunks
+        signInTestUser("bob_chunk_${UUID.randomUUID()}@test.com")
+        val bobRepo = SocialRepository(firestore, auth)
+        val cachedDest = java.io.File.createTempFile("cached_reel", ".mp4")
+        cachedDest.delete()
+        try {
+            val downloaded = withTimeout(DEFAULT_TIMEOUT_MS) {
+                bobRepo.downloadAndCacheCloudVideo(videoId, cachedDest).getOrThrow()
+            }
+            assertTrue(downloaded.exists())
+            assertTrue(payloadBytes.contentEquals(downloaded.readBytes()))
+        } finally {
+            cachedDest.delete()
+        }
+    }
+
     private companion object {
         const val DEFAULT_TIMEOUT_MS = 5000L
         const val FLOW_TIMEOUT_MS = 4000L

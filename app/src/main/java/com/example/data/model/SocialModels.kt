@@ -49,6 +49,7 @@ data class VideoPost(
     val videoUrl: String = "",
     val localFileName: String = "",
     val thumbnailData: String = "",
+    val chunkCount: Int = 0,
     val durationMs: Long = 0L,
     val tags: List<String> = emptyList(),
     val visibility: String = "public",
@@ -56,6 +57,17 @@ data class VideoPost(
     val commentsCount: Long = 0L,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@IgnoreExtraProperties
+data class VideoMediaChunk(
+    @DocumentId val id: String = "",
+    val videoId: String = "",
+    val userId: String = "",
+    val chunkIndex: Int = 0,
+    val data: String = "",
+    val visibility: String = "public",
+    @ServerTimestamp val createdAt: Timestamp? = null
 )
 
 @IgnoreExtraProperties

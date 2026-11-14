@@ -1,7 +1,6 @@
 package com.example.data.repository
 
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -12,20 +11,29 @@ import org.robolectric.annotation.Config
 @Config(manifest = Config.NONE, sdk = [35])
 class TenorRepositoryTest {
 
-    @Test
-    fun placeholderOrBlankKey_returnsMissingApiKeyState() = runBlocking {
-        val placeholderRepo = TenorRepository(apiKey = "MY_TENOR_API_KEY")
-        assertFalse(placeholderRepo.isConfigured())
-        assertTrue(placeholderRepo.loadGifs("") is TenorUiState.MissingApiKey)
+    private val repo = TenorRepository()
 
-        val blankRepo = TenorRepository(apiKey = "")
-        assertFalse(blankRepo.isConfigured())
-        assertTrue(blankRepo.loadGifs("dance") is TenorUiState.MissingApiKey)
+    @Test
+    fun buildTenorUrl_handlesBlankAndTurkishQueriesWithoutApiKey() {
+        assertEquals("https://tenor.com/", repo.buildTenorUrl(""))
+        assertEquals("https://tenor.com/", repo.buildTenorUrl("   "))
+        assertEquals("https://tenor.com/search/alkis-gifs", repo.buildTenorUrl("Alkış"))
+        assertEquals("https://tenor.com/search/happy-dance-gifs", repo.buildTenorUrl("Happy Dance!"))
     }
 
     @Test
-    fun nonPlaceholderKey_reportsConfigured() {
-        val configuredRepo = TenorRepository(apiKey = "test-tenor-key-123")
-        assertTrue(configuredRepo.isConfigured())
+    fun parseGifsFromHtml_deduplicatesVariantsAndPicksPreviewAndFullUrls() {
+        val sampleHtml = """
+            <img src="https://media.tenor.com/0eLcXZRPxCAAAAAM/happy-dance-cats.gif" />
+            <img src="https://media1.tenor.com/m/0eLcXZRPxCAAAAAC/happy-dance-cats.gif" />
+            <img src="https://media.tenor.com/HCyNMWQv868AAAAM/good-night.gif" />
+        """.trimIndent()
+
+        val gifs = repo.parseGifsFromHtml(sampleHtml)
+        assertEquals(2, gifs.size)
+        assertEquals("0eLcXZRPxC", gifs[0].id)
+        assertEquals("https://media.tenor.com/0eLcXZRPxCAAAAAM/happy-dance-cats.gif", gifs[0].previewUrl)
+        assertEquals("https://media1.tenor.com/m/0eLcXZRPxCAAAAAC/happy-dance-cats.gif", gifs[0].fullUrl)
+        assertTrue(gifs[0].title.contains("happy dance cats"))
     }
 }

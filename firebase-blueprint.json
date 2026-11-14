@@ -148,6 +148,10 @@
           "type": "string",
           "description": "Compact base64 JPEG thumbnail preview."
         },
+        "chunkCount": {
+          "type": "integer",
+          "description": "Number of Firestore media_chunks for cross-device video playback."
+        },
         "durationMs": {
           "type": "integer",
           "description": "Duration of the video in milliseconds."
@@ -273,6 +277,40 @@
         "visibility",
         "createdAt"
       ]
+    },
+    "VideoMediaChunk": {
+      "title": "VideoMediaChunk",
+      "description": "Base64-encoded MP4 chunk for cross-device video streaming and caching.",
+      "type": "object",
+      "properties": {
+        "videoId": {
+          "type": "string",
+          "description": "Parent video document ID."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Uploader Firebase Auth UID."
+        },
+        "chunkIndex": {
+          "type": "integer",
+          "description": "Zero-based sequential chunk index."
+        },
+        "data": {
+          "type": "string",
+          "description": "Base64 chunk payload."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public"],
+          "description": "Chunk visibility."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of chunk creation."
+        }
+      },
+      "required": ["videoId", "userId", "chunkIndex", "data", "visibility", "createdAt"]
     }
   },
   "firestore": {
@@ -299,6 +337,10 @@
     "/videos/{videoId}/comments/{commentId}": {
       "schema": { "$ref": "#/entities/Comment" },
       "description": "Text and Tenor GIF comments for a video."
+    },
+    "/videos/{videoId}/media_chunks/{chunkId}": {
+      "schema": { "$ref": "#/entities/VideoMediaChunk" },
+      "description": "Base64 MP4 chunks for cross-device video playback."
     }
   }
 }

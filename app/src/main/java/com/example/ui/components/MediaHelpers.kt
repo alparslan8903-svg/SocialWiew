@@ -6,7 +6,9 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.os.Looper
 import android.util.Base64
+import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
@@ -18,6 +20,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -54,10 +57,20 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Presentation
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.Effects
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.Transformer
+import androidx.media3.transformer.VideoEncoderSettings
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.ImageLoader
@@ -67,20 +80,28 @@ import coil.decode.ImageDecoderDecoder
 import com.example.data.model.VideoPost
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
+import kotlin.coroutines.resume
 
 data class LocalVideoInfo(
     val fileName: String,
+    val filePath: String,
     val localUri: Uri,
     val durationMs: Long,
-    val thumbnailBase64: String
+    val thumbnailBase64: String,
+    val sizeBytes: Long
 )
 
 object VideoMediaHelper {
+    private const val TAG = "VideoMediaHelper"
     private const val VIDEO_DIR = "videos"
+    private const val COMPRESS_THRESHOLD_BYTES = 5_500_000L
+    const val MAX_UPLOAD_BYTES = 15_500_000L
 
     suspend fun copyPickedVideoToAppStorage(context: Context, sourceUri: Uri): LocalVideoInfo? =
         withContext(Dispatchers.IO) {
@@ -94,6 +115,17 @@ object VideoMediaHelper {
                         input.copyTo(output)
                     }
                 } ?: return@withContext null
+
+                if (destFile.length() > COMPRESS_THRESHOLD_BYTES) {
+                    val compressedFile = File(videosDir, "cmp_$fileName")
+                    val compressed = compressVideoIfSmaller(context, destFile, compressedFile)
+                    if (compressed && compressedFile.exists() && compressedFile.length() in 1L until destFile.length()) {
+                        destFile.delete()
+                        compressedFile.renameTo(destFile)
+                    } else {
+                        compressedFile.delete()
+                    }
+                }
 
                 val retriever = MediaMetadataRetriever()
                 var durationMs = 0L
@@ -119,20 +151,96 @@ object VideoMediaHelper {
 
                 LocalVideoInfo(
                     fileName = fileName,
+                    filePath = destFile.absolutePath,
                     localUri = Uri.fromFile(destFile),
                     durationMs = durationMs,
-                    thumbnailBase64 = thumbnailBase64
+                    thumbnailBase64 = thumbnailBase64,
+                    sizeBytes = destFile.length()
                 )
             } catch (_: Exception) {
                 null
             }
         }
 
+    @OptIn(UnstableApi::class)
+    private suspend fun compressVideoIfSmaller(
+        context: Context,
+        inputFile: File,
+        outputFile: File
+    ): Boolean {
+        return withTimeoutOrNull(45_000L) {
+            withContext(Dispatchers.Main) {
+                suspendCancellableCoroutine { cont ->
+                    try {
+                        val encoderFactory = DefaultEncoderFactory.Builder(context)
+                            .setRequestedVideoEncoderSettings(
+                                VideoEncoderSettings.Builder()
+                                    .setBitrate(1_400_000)
+                                    .build()
+                            )
+                            .build()
+
+                        val transformer = Transformer.Builder(context)
+                            .setLooper(Looper.getMainLooper())
+                            .setVideoMimeType(MimeTypes.VIDEO_H264)
+                            .setEncoderFactory(encoderFactory)
+                            .addListener(object : Transformer.Listener {
+                                override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                                    if (cont.isActive) cont.resume(true)
+                                }
+
+                                override fun onError(
+                                    composition: Composition,
+                                    exportResult: ExportResult,
+                                    exportException: ExportException
+                                ) {
+                                    Log.w(TAG, "Video compression skipped: ${exportException.message}")
+                                    if (cont.isActive) cont.resume(false)
+                                }
+                            })
+                            .build()
+
+                        val editedItem = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(inputFile)))
+                            .setEffects(
+                                Effects(
+                                    emptyList(),
+                                    listOf(Presentation.createForHeight(720))
+                                )
+                            )
+                            .build()
+
+                        transformer.start(editedItem, outputFile.absolutePath)
+                        cont.invokeOnCancellation {
+                            try {
+                                transformer.cancel()
+                            } catch (_: Exception) {
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Transformer init failed", e)
+                        if (cont.isActive) cont.resume(false)
+                    }
+                }
+            }
+        } ?: false
+    }
+
+    fun getCloudCacheFile(context: Context, videoId: String): File {
+        val cacheDir = File(context.cacheDir, VIDEO_DIR).apply { mkdirs() }
+        return File(cacheDir, "$videoId.mp4")
+    }
+
     fun resolvePlayableUri(context: Context, video: VideoPost): Uri? {
         if (video.localFileName.isNotBlank()) {
             val localFile = File(File(context.filesDir, VIDEO_DIR), video.localFileName)
             if (localFile.exists() && localFile.length() > 0L) {
                 return Uri.fromFile(localFile)
+            }
+        }
+        if (video.id.isNotBlank()) {
+            val cachedFile = getCloudCacheFile(context, video.id)
+            if (cachedFile.exists() && cachedFile.length() > 0L) {
+                return Uri.fromFile(cachedFile)
             }
         }
         if (video.videoUrl.isNotBlank()) {
@@ -184,23 +292,48 @@ fun VideoPlayerSurface(
     thumbnailBase64: String,
     isActive: Boolean,
     isMuted: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    cloudVideoId: String = "",
+    cloudChunkCount: Int = 0,
+    onFetchCloudVideo: (suspend (String) -> Uri?)? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    var userPaused by remember(videoUri) { mutableStateOf(false) }
+
+    var cloudResolvedUri by remember(videoUri, cloudVideoId) { mutableStateOf<Uri?>(null) }
+    var isDownloadingCloud by remember(videoUri, cloudVideoId, cloudChunkCount) {
+        mutableStateOf(videoUri == null && cloudChunkCount > 0 && cloudVideoId.isNotBlank())
+    }
+    var cloudDownloadFailed by remember(videoUri, cloudVideoId) { mutableStateOf(false) }
+
+    LaunchedEffect(videoUri, cloudVideoId, cloudChunkCount) {
+        if (videoUri == null && cloudChunkCount > 0 && cloudVideoId.isNotBlank() && onFetchCloudVideo != null) {
+            isDownloadingCloud = true
+            cloudDownloadFailed = false
+            val resolved = onFetchCloudVideo(cloudVideoId)
+            cloudResolvedUri = resolved
+            cloudDownloadFailed = resolved == null
+            isDownloadingCloud = false
+        } else {
+            isDownloadingCloud = false
+        }
+    }
+
+    val effectiveUri = videoUri ?: cloudResolvedUri
+
+    var userPaused by remember(effectiveUri) { mutableStateOf(false) }
     var showFeedbackIcon by remember { mutableStateOf(false) }
-    var isBuffering by remember(videoUri) { mutableStateOf(videoUri != null) }
-    var hasPlaybackError by remember(videoUri) { mutableStateOf(false) }
+    var isBuffering by remember(effectiveUri) { mutableStateOf(effectiveUri != null) }
+    var hasPlaybackError by remember(effectiveUri) { mutableStateOf(false) }
 
     val thumbnailBitmap = remember(thumbnailBase64) {
         VideoMediaHelper.decodeThumbnail(thumbnailBase64)
     }
 
-    val exoPlayer = remember(videoUri) {
-        if (videoUri == null) null
+    val exoPlayer = remember(effectiveUri) {
+        if (effectiveUri == null) null
         else ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(videoUri))
+            setMediaItem(MediaItem.fromUri(effectiveUri))
             repeatMode = Player.REPEAT_MODE_ONE
             prepare()
         }
@@ -300,7 +433,30 @@ fun VideoPlayerSurface(
             )
         }
 
-        if (videoUri == null || hasPlaybackError) {
+        if (isDownloadingCloud) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.6f),
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.padding(24.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Text(
+                        text = "Video buluttan hazırlanıyor...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
+        } else if (effectiveUri == null || hasPlaybackError || cloudDownloadFailed) {
             Surface(
                 color = Color.Black.copy(alpha = 0.65f),
                 shape = MaterialTheme.shapes.medium,
@@ -310,9 +466,7 @@ fun VideoPlayerSurface(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    androidx.compose.foundation.layout.Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
                             imageVector = Icons.Filled.VideocamOff,
                             contentDescription = "Video kaynağı bulunamadı",
@@ -320,7 +474,11 @@ fun VideoPlayerSurface(
                             modifier = Modifier.size(28.dp)
                         )
                         Text(
-                            text = if (videoUri == null) "Video başka bir cihazın yerel dosyası" else "Video oynatılamadı",
+                            text = if (effectiveUri == null && cloudChunkCount == 0) {
+                                "Bu eski video yalnızca ilk yüklendiği cihazda kayıtlı"
+                            } else {
+                                "Video oynatılamadı"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.85f),
                             modifier = Modifier.padding(top = 6.dp)

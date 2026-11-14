@@ -72,6 +72,7 @@ fun UploadScreen(
         caption: String,
         videoUrl: String,
         localFileName: String?,
+        localFilePath: String?,
         thumbnailData: String?,
         durationMs: Long,
         tags: List<String>,
@@ -97,10 +98,13 @@ fun UploadScreen(
             scope.launch {
                 val info = VideoMediaHelper.copyPickedVideoToAppStorage(context, uri)
                 isProcessingPick = false
-                if (info != null) {
-                    pickedVideo = info
-                } else {
+                if (info == null) {
                     errorNote = "Seçilen video dosyası okunamadı."
+                } else if (info.sizeBytes > VideoMediaHelper.MAX_UPLOAD_BYTES) {
+                    pickedVideo = null
+                    errorNote = "Video sıkıştırma sonrası bile 15 MB sınırını aşıyor. Lütfen daha kısa bir klip seçin veya video URL'si girin."
+                } else {
+                    pickedVideo = info
                 }
             }
         }
@@ -317,6 +321,7 @@ fun UploadScreen(
                                     caption,
                                     videoUrlInput.trim(),
                                     pickedVideo?.fileName,
+                                    pickedVideo?.filePath,
                                     pickedVideo?.thumbnailBase64,
                                     pickedVideo?.durationMs ?: 0L,
                                     selectedTags.toList()

@@ -1,5 +1,7 @@
 package com.example.ui.viewmodel
 
+import android.content.Context
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,6 +12,7 @@ import com.example.data.model.VideoPost
 import com.example.data.repository.SocialRepository
 import com.example.data.repository.TenorRepository
 import com.example.data.repository.TenorUiState
+import com.example.ui.components.VideoMediaHelper
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -170,10 +173,22 @@ class SocialFeedViewModel(
         }
     }
 
+    suspend fun resolveCloudVideoUri(context: Context, videoId: String): Uri? {
+        val cacheFile = VideoMediaHelper.getCloudCacheFile(context, videoId)
+        if (cacheFile.exists() && cacheFile.length() > 0L) {
+            return Uri.fromFile(cacheFile)
+        }
+        return socialRepository.downloadAndCacheCloudVideo(videoId, cacheFile)
+            .onFailure { Log.w(TAG, "Cloud video download failed for $videoId", it) }
+            .getOrNull()
+            ?.let { Uri.fromFile(it) }
+    }
+
     fun publishVideo(
         caption: String,
         videoUrl: String,
         localFileName: String?,
+        localFilePath: String?,
         thumbnailData: String?,
         durationMs: Long,
         tags: List<String>,
@@ -192,12 +207,13 @@ class SocialFeedViewModel(
                 caption = caption,
                 videoUrl = videoUrl,
                 localFileName = localFileName,
+                localFilePath = localFilePath,
                 thumbnailData = thumbnailData,
                 durationMs = durationMs,
                 tags = tags
             ).onSuccess {
                 _isPublishing.value = false
-                _toastEvents.tryEmit("Videonuz yayınlandı!")
+                _toastEvents.tryEmit("Videonuz buluta yüklendi ve yayınlandı!")
                 onSuccess()
             }.onFailure { error ->
                 _isPublishing.value = false

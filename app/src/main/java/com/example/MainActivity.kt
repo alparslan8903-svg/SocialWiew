@@ -356,7 +356,10 @@ fun MainSocialScaffold(
                             },
                             onNavigateToUpload = { navigateToTab(VibeRoutes.UPLOAD) },
                             onNavigateToDiscover = { navigateToTab(VibeRoutes.DISCOVER) },
-                            onNavigateToSearch = { navigateToTab(VibeRoutes.SEARCH) }
+                            onNavigateToSearch = { navigateToTab(VibeRoutes.SEARCH) },
+                            onResolveCloudVideo = { videoId ->
+                                viewModel.resolveCloudVideoUri(context, videoId)
+                            }
                         )
                     }
 
@@ -394,11 +397,12 @@ fun MainSocialScaffold(
                     composable(VibeRoutes.UPLOAD) {
                         UploadScreen(
                             isPublishing = isPublishing,
-                            onPublishVideo = { caption, url, localName, thumb, duration, tags, onDone ->
+                            onPublishVideo = { caption, url, localName, localPath, thumb, duration, tags, onDone ->
                                 viewModel.publishVideo(
                                     caption = caption,
                                     videoUrl = url,
                                     localFileName = localName,
+                                    localFilePath = localPath,
                                     thumbnailData = thumb,
                                     durationMs = duration,
                                     tags = tags
@@ -476,6 +480,9 @@ fun MainSocialScaffold(
                         fullScreenVideo = null
                         if (liveVideo.userId == currentUserId) navigateToTab(VibeRoutes.PROFILE)
                         else navController.navigate(VibeRoutes.creatorRoute(liveVideo.userId))
+                    },
+                    onResolveCloudVideo = { videoId ->
+                        viewModel.resolveCloudVideoUri(context, videoId)
                     }
                 )
                 Surface(

@@ -62,7 +62,8 @@ service cloud.firestore {
              data.videoUrl is string && data.videoUrl.size() <= 2000 &&
              (!('localFileName' in data) || data.localFileName == null || (data.localFileName is string && data.localFileName.size() <= 200)) &&
              (!('thumbnailData' in data) || data.thumbnailData == null || (data.thumbnailData is string && data.thumbnailData.size() <= 150000)) &&
-             (data.videoUrl.size() > 0 || ('localFileName' in data && data.localFileName is string && data.localFileName.size() > 0)) &&
+                           (!('chunkCount' in data) || (data.chunkCount is int && data.chunkCount >= 0 && data.chunkCount <= 40)) &&
+              (data.videoUrl.size() > 0 || ('localFileName' in data && data.localFileName is string && data.localFileName.size() > 0) || ('chunkCount' in data && data.chunkCount is int && data.chunkCount > 0)) &&
              data.durationMs is int && data.durationMs >= 0 &&
              data.tags is list && data.tags.size() <= 5 && (data.tags.size() == 0 || data.tags[0] is string) &&
              data.visibility == 'public' &&
@@ -70,6 +71,15 @@ service cloud.firestore {
              data.commentsCount is int && data.commentsCount >= 0 &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMediaChunk(data) {
+      return data.videoId is string && data.videoId.size() >= 1 && data.videoId.size() <= 128 &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.chunkIndex is int && data.chunkIndex >= 0 && data.chunkIndex < 40 &&
+             data.data is string && data.data.size() >= 1 && data.data.size() <= 700000 &&
+             data.visibility == 'public' &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
     }
 
     function isValidVideoLike(data) {
@@ -187,7 +197,7 @@ service cloud.firestore {
                        incoming().likesCount == 0 &&
                        incoming().commentsCount == 0 &&
                        incoming().keys().hasAll(['userId', 'authorName', 'authorUsername', 'caption', 'videoUrl', 'durationMs', 'tags', 'visibility', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['userId', 'authorName', 'authorUsername', 'authorAvatarUrl', 'caption', 'videoUrl', 'localFileName', 'thumbnailData', 'durationMs', 'tags', 'visibility', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'authorName', 'authorUsername', 'authorAvatarUrl', 'caption', 'videoUrl', 'localFileName', 'thumbnailData', 'chunkCount', 'durationMs', 'tags', 'visibility', 'likesCount', 'commentsCount', 'createdAt', 'updatedAt']) &&
                        isValidVideo(incoming());
 
       allow update: if isSignedIn() &&
@@ -235,6 +245,28 @@ service cloud.firestore {
         allow update: if false;
 
         allow delete: if isSignedIn() && isValidId(videoId) && isValidId(commentId) && existing().userId == request.auth.uid;
+      }
+
+      match /media_chunks/{chunkId} {
+        allow get: if isSignedIn() && isValidId(videoId) && isValidId(chunkId) && existing().videoId == videoId && existing().visibility == 'public';
+        allow list: if isSignedIn() && existing().videoId == videoId && existing().visibility == 'public';
+
+        allow create: if isSignedIn() &&
+                         isValidId(videoId) &&
+                         isValidId(chunkId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().videoId == videoId &&
+                         incoming().keys().hasAll(['videoId', 'userId', 'chunkIndex', 'data', 'visibility', 'createdAt']) &&
+                         incoming().keys().hasOnly(['videoId', 'userId', 'chunkIndex', 'data', 'visibility', 'createdAt']) &&
+                         isValidMediaChunk(incoming()) &&
+                         ((exists(/databases/$(database)/documents/videos/$(videoId)) &&
+                           get(/databases/$(database)/documents/videos/$(videoId)).data.userId == request.auth.uid) ||
+                          (existsAfter(/databases/$(database)/documents/videos/$(videoId)) &&
+                           getAfter(/databases/$(database)/documents/videos/$(videoId)).data.userId == request.auth.uid));
+
+        allow update: if false;
+
+        allow delete: if isSignedIn() && isValidId(videoId) && isValidId(chunkId) && existing().userId == request.auth.uid;
       }
     }
 
