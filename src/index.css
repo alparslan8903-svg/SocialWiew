@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+:root {
+  --sw-bg: #f6f7fb;
+  --sw-surface: #ffffff;
+  --sw-surface-variant: #eceff6;
+  --sw-surface-high: #e2e6f0;
+  --sw-outline: #d2d8e6;
+  --sw-text-primary: #11131c;
+  --sw-text-secondary: #5a627a;
+  --sw-primary: #e11d52;
+  --sw-primary-container: #ffe4ec;
+  --sw-on-primary-container: #5a0019;
+  --sw-secondary: #00a88f;
+  --sw-secondary-container: #d3fbf1;
+  --sw-on-secondary-container: #00382f;
+  --sw-amber: #d97706;
+}
+
+html.dark {
+  --sw-bg: #090a0f;
+  --sw-surface: #11131c;
+  --sw-surface-variant: #1a1e2b;
+  --sw-surface-high: #23283a;
+  --sw-outline: #2f364d;
+  --sw-text-primary: #f4f6fb;
+  --sw-text-secondary: #a0a8c0;
+  --sw-primary: #ff3b6b;
+  --sw-primary-container: #540d22;
+  --sw-on-primary-container: #ffd9e2;
+  --sw-secondary: #00e5c3;
+  --sw-secondary-container: #004f42;
+  --sw-on-secondary-container: #84fde9;
+  --sw-amber: #ffb84d;
+}
+
+body {
+  margin: 0;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--sw-bg);
+  color: var(--sw-text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: 'Space Grotesk', 'Plus Jakarta Sans', sans-serif;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}

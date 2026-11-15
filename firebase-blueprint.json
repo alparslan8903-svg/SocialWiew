@@ -323,6 +323,29 @@
         }
       },
       "required": ["videoId", "userId", "chunkIndex", "data", "visibility", "createdAt"]
+    },
+    "AppConfig": {
+      "title": "AppConfig",
+      "description": "Shared application configuration such as GitHub update repository.",
+      "type": "object",
+      "properties": {
+        "githubRepo": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "GitHub owner/repo slug for release checks."
+        },
+        "updatedBy": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Admin UID who updated the configuration."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of update."
+        }
+      },
+      "required": ["githubRepo", "updatedAt"]
     }
   },
   "firestore": {
@@ -353,6 +376,10 @@
     "/videos/{videoId}/media_chunks/{chunkId}": {
       "schema": { "$ref": "#/entities/VideoMediaChunk" },
       "description": "Base64 MP4 chunks for cross-device video playback."
+    },
+    "/app_config/{docId}": {
+      "schema": { "$ref": "#/entities/AppConfig" },
+      "description": "Shared application configuration documents."
     }
   }
 }

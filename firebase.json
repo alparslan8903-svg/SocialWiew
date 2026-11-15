@@ -1,7 +1,7 @@
 {
   "firestore": [
     {
-      "database": "ai-studio-android-vibereel-39471120-42e5-49ba-9c2b-cd03dbce2d87",
+      "database": "ai-studio-socialwiew-76843402-c996-4e5f-82f3-b5c50f47323a",
       "rules": "firestore.rules"
     }
   ],
