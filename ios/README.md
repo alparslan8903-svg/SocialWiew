@@ -2,7 +2,15 @@
 
 Bu klasör, **SocialWiew** uygulamasının **macOS üzerinde Xcode** ile açılıp **App Store Connect**'e yüklenebilmesi için hazırlanmış yerel **Swift / SwiftUI (iOS 17+)** kaynak kodunu içerir.
 
-> **Not:** Xcode ve iOS SDK yalnızca **macOS** üzerinde çalıştığı için iOS derlemesi ve `.ipa` arşivi Mac bilgisayarınızda yapılmalıdır.
+> **Not:** Xcode ve iOS SDK yalnızca **macOS** üzerinde çalıştığı için `.ipa` derlemesi Mac bilgisayarınızda veya GitHub Actions (`macos-latest`) üzerinde yapılmalıdır.
+
+## Mac Olmadan GitHub Actions ile `.ipa` Oluşturma
+
+Repoya `.github/workflows/build-ios-ipa.yml` eklendi. Mac'iniz yoksa bile:
+1. Bu repoyu GitHub'a pushlayın.
+2. GitHub'da **Actions > Build iOS IPA > Run workflow** adımını çalıştırın.
+3. İşlem bitince **Artifacts** bölümünden `SocialWiew-unsigned-ipa` (`SocialWiew-unsigned.ipa`) dosyasını indirin.
+*(Not: App Store Connect veya gerçek cihazda imzalı kurulum için Apple Developer hesabı ile imzalama ya da AltStore/Sideloadly gibi bir araç gerekir.)*
 
 ## Xcode Projesi Oluşturma Adımları (macOS)
 

@@ -1,0 +1,54 @@
+name: Build iOS Lite IPA (iOS 12+)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'SocialWiew-Lite-iOS/**'
+      - '.github/workflows/build-ios-lite-ipa.yml'
+
+jobs:
+  build-lite-unsigned-ipa:
+    name: Build SocialWiew Lite Unsigned IPA (iOS 12+)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Lite Xcode project
+        working-directory: SocialWiew-Lite-iOS
+        run: xcodegen generate
+
+      - name: Build Release app for iOS 12+ (unsigned)
+        working-directory: SocialWiew-Lite-iOS
+        run: |
+          xcodebuild \
+            -project SocialWiewLite.xcodeproj \
+            -scheme SocialWiewLite \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            IPHONEOS_DEPLOYMENT_TARGET=12.0 \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
+
+      - name: Package Payload into SocialWiew-Lite-iOS12-unsigned.ipa
+        working-directory: SocialWiew-Lite-iOS
+        run: |
+          mkdir -p ipa_out/Payload
+          cp -R build/Build/Products/Release-iphoneos/*.app ipa_out/Payload/
+          cd ipa_out
+          zip -qry ../SocialWiew-Lite-iOS12-unsigned.ipa Payload
+
+      - name: Upload SocialWiew-Lite-iOS12-unsigned.ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SocialWiew-Lite-iOS12-unsigned-ipa
+          path: SocialWiew-Lite-iOS/SocialWiew-Lite-iOS12-unsigned.ipa
+          if-no-files-found: error

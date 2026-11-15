@@ -104,11 +104,13 @@ struct CommentsSheetView: View {
                     } label: {
                         Text("GIF")
                             .font(.caption.bold())
-                            .padding(.horizontal, 10)
+                            .padding(.horizontal, 12)
                             .padding(.vertical, 8)
-                            .background(showGifPicker ? SocialWiewColors.primary(colorScheme) : SocialWiewColors.surfaceVariant(colorScheme))
                             .foregroundStyle(showGifPicker ? .white : SocialWiewColors.textPrimary(colorScheme))
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .liquidGlassCapsule(
+                                tint: showGifPicker ? SocialWiewColors.primary(colorScheme) : nil,
+                                interactive: true
+                            )
                     }
 
                     TextField("Yorum yaz...", text: $commentText)
@@ -121,12 +123,20 @@ struct CommentsSheetView: View {
                         showGifPicker = false
                     } label: {
                         Image(systemName: "paperplane.fill")
-                            .foregroundStyle(SocialWiewColors.primary(colorScheme))
+                            .foregroundStyle(.white)
+                            .padding(10)
+                            .liquidGlass(
+                                in: Circle(),
+                                tint: SocialWiewColors.primary(colorScheme),
+                                interactive: true
+                            )
                     }
                     .disabled(commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedGif == nil)
                 }
                 .padding()
-                .background(SocialWiewColors.surface(colorScheme))
+                .liquidGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
             }
             .navigationTitle("Yorumlar (\(video.commentsCount))")
             .navigationBarTitleDisplayMode(.inline)
@@ -138,6 +148,7 @@ struct CommentsSheetView: View {
                 }
             }
         }
+        .presentationBackground(.ultraThinMaterial)
     }
 
     private var gifPickerPanel: some View {

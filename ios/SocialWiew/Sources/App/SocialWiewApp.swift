@@ -128,14 +128,14 @@ private struct MainTabScaffold: View {
                 .tag(SocialWiewTab.profile)
             }
             .tint(SocialWiewColors.neonCoral)
+            .modifier(LiquidGlassTabBarBehaviorModifier())
 
             if let toast = viewModel.toastMessage {
                 Text(toast)
                     .font(.caption.bold())
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Capsule())
+                    .liquidGlassCapsule()
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -175,12 +175,25 @@ private struct MainTabScaffold: View {
                         .font(.headline)
                         .foregroundStyle(.white)
                         .padding(12)
-                        .background(.black.opacity(0.6))
-                        .clipShape(Circle())
+                        .liquidGlass(in: Circle(), interactive: true)
                 }
                 .padding()
             }
         }
+    }
+}
+
+private struct LiquidGlassTabBarBehaviorModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            content.tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
     }
 }
 

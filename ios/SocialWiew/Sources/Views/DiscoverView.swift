@@ -112,20 +112,17 @@ private struct CreatorCard: View {
                         .font(.caption.bold())
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
-                        .background(isFollowing ? SocialWiewColors.surfaceVariant(colorScheme) : SocialWiewColors.primary(colorScheme))
                         .foregroundStyle(isFollowing ? SocialWiewColors.textPrimary(colorScheme) : .white)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .liquidGlassCapsule(
+                            tint: isFollowing ? nil : SocialWiewColors.primary(colorScheme),
+                            interactive: true
+                        )
                 }
             }
         }
         .padding(12)
         .frame(width: 164)
-        .background(SocialWiewColors.surface(colorScheme))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(SocialWiewColors.outline(colorScheme), lineWidth: 1)
-        )
+        .liquidGlass(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
 

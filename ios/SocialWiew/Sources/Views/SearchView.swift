@@ -63,21 +63,25 @@ struct SearchView: View {
 
                     if !trendingTags.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(trendingTags, id: \.self) { tag in
-                                    Button("#\(tag)") {
-                                        query = tag
-                                        saveRecent(tag)
+                            LiquidGlassGroup(spacing: 8) {
+                                HStack(spacing: 8) {
+                                    ForEach(trendingTags, id: \.self) { tag in
+                                        Button("#\(tag)") {
+                                            query = tag
+                                            saveRecent(tag)
+                                        }
+                                        .font(.caption.bold())
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .foregroundStyle(SocialWiewColors.secondary(colorScheme))
+                                        .liquidGlassCapsule(
+                                            tint: SocialWiewColors.secondary(colorScheme),
+                                            interactive: true
+                                        )
                                     }
-                                    .font(.caption.bold())
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(SocialWiewColors.surfaceVariant(colorScheme))
-                                    .foregroundStyle(SocialWiewColors.secondary(colorScheme))
-                                    .clipShape(Capsule())
                                 }
+                                .padding(.horizontal)
                             }
-                            .padding(.horizontal)
                         }
                     }
 
@@ -138,8 +142,7 @@ struct SearchView: View {
                                             .foregroundStyle(SocialWiewColors.textSecondary(colorScheme))
                                     }
                                     .padding(12)
-                                    .background(SocialWiewColors.surface(colorScheme))
-                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .liquidGlass(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                                 }
                                 .padding(.horizontal)
                             }

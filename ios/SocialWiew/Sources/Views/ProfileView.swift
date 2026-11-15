@@ -115,8 +115,7 @@ struct ProfileView: View {
                         .pickerStyle(.segmented)
                     }
                     .padding()
-                    .background(SocialWiewColors.surface(colorScheme))
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .liquidGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .padding(.horizontal)
 
                     VStack(alignment: .leading, spacing: 10) {
@@ -175,8 +174,7 @@ struct ProfileView: View {
                         .buttonStyle(.bordered)
                     }
                     .padding()
-                    .background(SocialWiewColors.surface(colorScheme))
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .liquidGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .padding(.horizontal)
                 }
 
@@ -206,8 +204,7 @@ struct ProfileView: View {
                                                 .font(.caption)
                                                 .foregroundStyle(.white)
                                                 .padding(8)
-                                                .background(.black.opacity(0.6))
-                                                .clipShape(Circle())
+                                                .liquidGlass(in: Circle(), interactive: true)
                                         }
                                         .padding(8)
                                     }

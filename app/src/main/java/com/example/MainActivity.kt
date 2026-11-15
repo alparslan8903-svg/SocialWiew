@@ -106,6 +106,8 @@ import com.example.ui.theme.VibeReelTheme
 import com.example.ui.viewmodel.SocialFeedViewModel
 import com.example.ui.viewmodel.UiState
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
@@ -139,6 +141,16 @@ private val TopTabs = listOf(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (FirebaseApp.getApps(this).isEmpty()) {
+            val options = FirebaseOptions.Builder()
+                .setProjectId("rugged-codex-n9v0l")
+                .setApplicationId("1:217130284857:web:cdedda4bcb4ab0a5ee5ae8")
+                .setApiKey("AIzaSyAT9ZYolPphFPbvRH7xKpVuTex1_sjLT0k")
+                .setStorageBucket("rugged-codex-n9v0l.firebasestorage.app")
+                .setGcmSenderId("217130284857")
+                .build()
+            FirebaseApp.initializeApp(this, options)
+        }
         enableEdgeToEdge()
         setContent {
             val context = LocalContext.current

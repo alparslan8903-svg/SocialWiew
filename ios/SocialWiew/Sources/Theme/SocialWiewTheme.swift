@@ -151,3 +151,99 @@ struct CreatorAvatarView: View {
         }
     }
 }
+
+struct LiquidGlassGroup<Content: View>: View {
+    var spacing: CGFloat = 12
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) {
+                content()
+            }
+        } else {
+            content()
+        }
+        #else
+        content()
+        #endif
+    }
+}
+
+struct LiquidGlassModifier<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let tint: Color?
+    let interactive: Bool
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            content.glassEffect(makeGlass(), in: shape)
+        } else {
+            fallbackGlass(content)
+        }
+        #else
+        fallbackGlass(content)
+        #endif
+    }
+
+    #if compiler(>=6.2)
+    @available(iOS 26.0, *)
+    private func makeGlass() -> Glass {
+        var glass = Glass.regular
+        if let tint {
+            glass = glass.tint(tint)
+        }
+        if interactive {
+            glass = glass.interactive()
+        }
+        return glass
+    }
+    #endif
+
+    @ViewBuilder
+    private func fallbackGlass(_ content: Content) -> some View {
+        content
+            .background {
+                ZStack {
+                    shape.fill(.ultraThinMaterial)
+                    if let tint {
+                        shape.fill(tint.opacity(colorScheme == .dark ? 0.22 : 0.16))
+                    }
+                }
+            }
+            .overlay {
+                shape.strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(colorScheme == .dark ? 0.32 : 0.65),
+                            Color.white.opacity(0.06)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.9
+                )
+            }
+            .clipShape(shape)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.32 : 0.10), radius: 12, x: 0, y: 6)
+    }
+}
+
+extension View {
+    func liquidGlass<S: InsettableShape>(
+        in shape: S,
+        tint: Color? = nil,
+        interactive: Bool = false
+    ) -> some View {
+        modifier(LiquidGlassModifier(shape: shape, tint: tint, interactive: interactive))
+    }
+
+    func liquidGlassCapsule(tint: Color? = nil, interactive: Bool = false) -> some View {
+        liquidGlass(in: Capsule(), tint: tint, interactive: interactive)
+    }
+}
+

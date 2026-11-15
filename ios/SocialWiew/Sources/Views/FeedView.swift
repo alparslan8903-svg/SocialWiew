@@ -61,22 +61,31 @@ struct FeedView: View {
             }
 
             VStack {
-                HStack(spacing: 16) {
-                    ForEach(FeedTabFilter.allCases, id: \.self) { tab in
-                        Button {
-                            selectedTab = tab
-                            activeVideoId = displayedVideos.first?.id
-                        } label: {
-                            VStack(spacing: 4) {
+                LiquidGlassGroup(spacing: 8) {
+                    HStack(spacing: 6) {
+                        ForEach(FeedTabFilter.allCases, id: \.self) { tab in
+                            Button {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    selectedTab = tab
+                                    activeVideoId = displayedVideos.first?.id
+                                }
+                            } label: {
                                 Text(tab.rawValue)
-                                    .font(.headline)
-                                    .foregroundStyle(selectedTab == tab ? .white : .white.opacity(0.6))
-                                Capsule()
-                                    .fill(selectedTab == tab ? SocialWiewColors.neonCoral : .clear)
-                                    .frame(width: 28, height: 3)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(selectedTab == tab ? .white : .white.opacity(0.75))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        selectedTab == tab
+                                            ? SocialWiewColors.neonCoral.opacity(0.85)
+                                            : Color.clear,
+                                        in: Capsule()
+                                    )
                             }
                         }
                     }
+                    .padding(4)
+                    .liquidGlassCapsule(interactive: true)
                 }
                 .padding(.top, 12)
                 Spacer()
@@ -166,9 +175,11 @@ private struct FeedReelCard: View {
                                     .font(.caption.bold())
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
-                                    .background(isFollowing ? Color.white.opacity(0.2) : SocialWiewColors.neonCoral)
                                     .foregroundStyle(.white)
-                                    .clipShape(Capsule())
+                                    .liquidGlassCapsule(
+                                        tint: isFollowing ? nil : SocialWiewColors.neonCoral,
+                                        interactive: true
+                                    )
                             }
                         }
                     }
@@ -189,47 +200,58 @@ private struct FeedReelCard: View {
 
                 Spacer(minLength: 8)
 
-                VStack(spacing: 18) {
-                    Button(action: onToggleLike) {
-                        VStack(spacing: 4) {
-                            Image(systemName: isLiked ? "heart.fill" : "heart")
-                                .font(.title2)
-                                .foregroundStyle(isLiked ? SocialWiewColors.neonCoral : .white)
-                            Text("\(video.likesCount)")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.white)
+                LiquidGlassGroup(spacing: 12) {
+                    VStack(spacing: 12) {
+                        Button(action: onToggleLike) {
+                            VStack(spacing: 3) {
+                                Image(systemName: isLiked ? "heart.fill" : "heart")
+                                    .font(.title3)
+                                    .foregroundStyle(isLiked ? SocialWiewColors.neonCoral : .white)
+                                    .frame(width: 44, height: 44)
+                                    .liquidGlass(
+                                        in: Circle(),
+                                        tint: isLiked ? SocialWiewColors.neonCoral : nil,
+                                        interactive: true
+                                    )
+                                Text("\(video.likesCount)")
+                                    .font(.caption2.monospacedDigit().bold())
+                                    .foregroundStyle(.white)
+                            }
                         }
-                    }
 
-                    Button(action: onOpenComments) {
-                        VStack(spacing: 4) {
-                            Image(systemName: "bubble.right.fill")
-                                .font(.title2)
-                                .foregroundStyle(.white)
-                            Text("\(video.commentsCount)")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.white)
+                        Button(action: onOpenComments) {
+                            VStack(spacing: 3) {
+                                Image(systemName: "bubble.right.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(.white)
+                                    .frame(width: 44, height: 44)
+                                    .liquidGlass(in: Circle(), interactive: true)
+                                Text("\(video.commentsCount)")
+                                    .font(.caption2.monospacedDigit().bold())
+                                    .foregroundStyle(.white)
+                            }
                         }
-                    }
 
-                    ShareLink(item: video.videoUrl.isEmpty ? "SocialWiew: \(video.caption)" : video.videoUrl) {
-                        VStack(spacing: 4) {
-                            Image(systemName: "arrowshape.turn.up.right.fill")
-                                .font(.title2)
-                                .foregroundStyle(.white)
-                            Text("Paylaş")
-                                .font(.caption)
-                                .foregroundStyle(.white)
+                        ShareLink(item: video.videoUrl.isEmpty ? "SocialWiew: \(video.caption)" : video.videoUrl) {
+                            VStack(spacing: 3) {
+                                Image(systemName: "arrowshape.turn.up.right.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(.white)
+                                    .frame(width: 44, height: 44)
+                                    .liquidGlass(in: Circle(), interactive: true)
+                                Text("Paylaş")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.white)
+                            }
                         }
-                    }
 
-                    Button(action: onToggleMute) {
-                        Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .font(.title3)
-                            .foregroundStyle(.white)
-                            .padding(8)
-                            .background(.black.opacity(0.45))
-                            .clipShape(Circle())
+                        Button(action: onToggleMute) {
+                            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                .font(.body)
+                                .foregroundStyle(.white)
+                                .frame(width: 42, height: 42)
+                                .liquidGlass(in: Circle(), interactive: true)
+                        }
                     }
                 }
             }
